@@ -51,7 +51,7 @@ loading at all. Both shipped because there is no gfx1100 CI runner.
 
 ## Chapters
 
-| | |
+| Chapter | What it covers |
 |---|---|
 | [01 — Throughput and power](paper/01-throughput-and-power.md) | What ten consumer AMD cards deliver, and what they draw doing it. |
 | [01a — What the image costs](paper/01a-what-the-image-costs.md) | The software stack is not a constant. Two images, four configurations, up to 53 percent apart at long context. |
@@ -61,7 +61,7 @@ loading at all. Both shipped because there is no gfx1100 CI runner.
 
 Everything used to produce the numbers is here, so the numbers can be checked.
 
-| | |
+| Tool | What it does |
 |---|---|
 | [`bench/n02-bench`](bench/n02-bench) | Throughput harness. Exact prompt lengths verified against the server's tokenizer, pinned output length, discarded warm-up, median of three, decode measured separately from prefill. |
 | [`tasks/task-01-sysfs-collector.md`](tasks/task-01-sysfs-collector.md) | The frozen evaluation rubric. Ten binary traps, all mechanically checkable, all derived from defects hit during a real build. |
@@ -70,7 +70,7 @@ Everything used to produce the numbers is here, so the numbers can be checked.
 
 ## The machine
 
-| | |
+| Component | Specification |
 |---|---|
 | GPUs | 10× RX 7900 XTX, gfx1100, 240 GB aggregate VRAM |
 | CPU | EPYC 7663, 56 core Milan |
