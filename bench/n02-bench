@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""
+n02-bench -- decode and prefill throughput at fixed context lengths.
+
+Task 01 conversations are a bad throughput instrument: turns vary in output
+length, context grows unevenly, models finish at different depths, and the
+first turn after a launch carries warm-up cost. This measures one thing at a
+time instead.
+
+  - prompt padded to an exact token count, verified with /tokenize
+  - output length fixed with ignore_eos, so every sample generates the same
+    number of tokens
+  - one warm-up request per context point, discarded
+  - three timed samples per point, median reported
+  - TTFT from the stream, decode rate from wall minus TTFT
+
+Usage:
+  n02-bench --base http://localhost:8000 --model coder-next-awq --label v0.23
+  n02-bench --base http://localhost:8001 --model coder-next-awq-r10 --label v0.27 \
+            --points 512,2048,8192,16384 --out ~/bench/coder.jsonl
+"""
+import argparse
+import json
+import statistics
+import sys
+import time
+import urllib.error
+import urllib.request
+
+FILLER = (
+    "The collector reads sysfs directly and posts a sample every five seconds. "
+    "Each card exposes junction, memory and edge temperatures, a power average, "
+    "fan speed, VRAM usage and the negotiated PCIe link width. "
+)
+TAIL = "\n\nSummarise the paragraph above in one sentence."
+
+
+def post(url, payload, timeout=600, stream=False):
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def token_count(base, model, text):
+    """Ask the server, rather than guessing at a tokenizer."""
+    try:
+        with post(base + "/tokenize", {"model": model, "prompt": text}, 60) as r:
+            d = json.loads(r.read())
+        return d.get("count") or len(d.get("tokens", []))
+    except Exception:
+        return None
+
+
+def build_prompt(base, model, target):
+    """Grow the filler until the tokenized prompt lands on target."""
+    lo, hi = 1, 4000
+    best, best_n = None, None
+    for _ in range(18):
+        mid = (lo + hi) // 2
+        text = FILLER * mid + TAIL
+        n = token_count(base, model, text)
+        if n is None:
+            # No /tokenize endpoint. Fall back to a crude ratio and let the
+            # reported prompt_tokens tell the truth afterwards.
+            approx = max(1, target // 38)
+            return FILLER * approx + TAIL
+        if best is None or abs(n - target) < abs(best_n - target):
+            best, best_n = text, n
+        if n < target:
+            lo = mid + 1
+        elif n > target:
+            hi = mid - 1
+        else:
+            return text
+        if lo > hi:
+            break
+    return best
+
+
+def one_shot(base, model, prompt, max_tokens):
+    """Returns (ttft_s, wall_s, prompt_tokens, completion_tokens)."""
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+        "min_tokens": max_tokens,
+        "ignore_eos": True,
+        "temperature": 0.0,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    t0 = time.perf_counter()
+    ttft = None
+    ptok = ctok = None
+    with post(base + "/v1/completions", payload) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            body = line[5:].strip()
+            if body == "[DONE]":
+                break
+            try:
+                chunk = json.loads(body)
+            except json.JSONDecodeError:
+                continue
+            ch = chunk.get("choices") or []
+            if ttft is None and ch and ch[0].get("text"):
+                ttft = time.perf_counter() - t0
+            u = chunk.get("usage")
+            if u:
+                ptok = u.get("prompt_tokens")
+                ctok = u.get("completion_tokens")
+    wall = time.perf_counter() - t0
+    return ttft, wall, ptok, ctok
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--label", required=True,
+                    help="what is being measured, e.g. v0.23-tp4")
+    ap.add_argument("--points", default="512,2048,8192,16384",
+                    help="prompt token counts to test")
+    ap.add_argument("--gen", type=int, default=256,
+                    help="tokens to generate per sample")
+    ap.add_argument("--samples", type=int, default=3)
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    base = args.base.rstrip("/")
+    points = [int(x) for x in args.points.split(",") if x.strip()]
+
+    print("%-9s %8s %8s %9s %9s %9s" %
+          ("ctx", "prompt", "ttft", "decode", "e2e", "spread"))
+    print("-" * 58)
+
+    rows = []
+    for target in points:
+        prompt = build_prompt(base, args.model, target)
+
+        try:
+            one_shot(base, args.model, prompt, args.gen)   # warm-up, discarded
+        except urllib.error.HTTPError as e:
+            print("%-9d  HTTP %s: %s" % (target, e.code, e.read()[:120].decode()))
+            continue
+        except Exception as e:
+            print("%-9d  failed: %s" % (target, e))
+            continue
+
+        dec, ttfts, e2e, ptok = [], [], [], None
+        for _ in range(args.samples):
+            t, w, pt, ct = one_shot(base, args.model, prompt, args.gen)
+            if t is None or not ct:
+                continue
+            ptok = pt
+            ttfts.append(t)
+            dec.append(ct / (w - t))
+            e2e.append(ct / w)
+
+        if not dec:
+            print("%-9d  no usable samples" % target)
+            continue
+
+        row = {
+            "label": args.label,
+            "model": args.model,
+            "base": base,
+            "ctx_target": target,
+            "prompt_tokens": ptok,
+            "gen_tokens": args.gen,
+            "samples": len(dec),
+            "ttft_s": round(statistics.median(ttfts), 3),
+            "decode_tok_s": round(statistics.median(dec), 2),
+            "e2e_tok_s": round(statistics.median(e2e), 2),
+            "decode_spread_pct": round(
+                (max(dec) - min(dec)) / statistics.median(dec) * 100, 1),
+            "ts": int(time.time()),
+        }
+        rows.append(row)
+        print("%-9d %8s %8.2f %9.2f %9.2f %8.1f%%" %
+              (target, ptok, row["ttft_s"], row["decode_tok_s"],
+               row["e2e_tok_s"], row["decode_spread_pct"]))
+
+    if rows:
+        first, last = rows[0]["decode_tok_s"], rows[-1]["decode_tok_s"]
+        print("-" * 58)
+        print("decode %.2f -> %.2f across %d -> %d tokens  (%.1f%% loss)" %
+              (first, last, rows[0]["prompt_tokens"], rows[-1]["prompt_tokens"],
+               (first - last) / first * 100))
+
+    if args.out:
+        with open(args.out, "a") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        print("appended %d rows to %s" % (len(rows), args.out))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)

@@ -1,136 +1,116 @@
-# ten-amd-gpus 
-Ten RX 7900 XTX cards, 240 GB of combined VRAM, one EPYC board, a garage in
-Canada. This repository holds the measurements, the tooling that produced
-them, and an honest account of where the platform stops.
+# Ten AMD GPUs as Inference Infrastructure
 
-Almost everything published about local inference assumes a single card or a
-datacenter. This is the space between.
+Ten RX 7900 XTX on one EPYC board, in a garage in Edmonton. No Infinity Fabric,
+no NVLink, no vendor support contract. Every card talks to every other card over
+PCIe Gen4 x8 and nothing else.
 
-## Headline results
+This repository is what has been learned running it. It is not a finished paper.
+It is a record that gets longer as the machine teaches us something, published as
+it goes, including the parts that turned out to be wrong.
 
-The largest model we served was GLM-4.6 at 357 billion parameters and 176 GB
-of weights, running at 23.3 tokens per second across all ten cards.
+## Why publish it
 
-The most efficient configuration was Qwen3.6-35B mixture-of-experts in INT4 on
-four cards, reaching 414 tokens per second at eight concurrent requests while
-drawing 1,066 W.
+Almost nothing exists on running serious local inference on consumer AMD
+hardware at this scale. There is excellent work on one or two cards, and there
+are vendor numbers from Instinct parts nobody reading this owns. Between those
+sits a gap: what actually happens when you put ten gaming cards in a box and try
+to serve real models on them.
 
-The highest aggregate throughput came from five independent servers spread
-across ten cards, reaching 1,965 tokens per second, which is 95 % of linear
-scaling.
+Most of what is here was found by hitting it. Some of it contradicts what we
+believed a month ago. That is recorded too, in place, rather than edited out.
 
-Peak draw under matrix multiplication was 3,108 W. Idle draw was 183 W.
+## What has been found so far
 
-Two results we did not expect and could not find documented elsewhere:
+**The container image is the largest single variable in throughput.** Two
+AMD-published images built five days apart differ by up to 53 percent in decode
+throughput at 16k context, on identical hardware and weights. At 512 tokens they
+are indistinguishable, which is why a short-prompt benchmark would call them
+equivalent. [Chapter 1.1](paper/01a-what-the-image-costs.md)
 
-**Splitting a model across fewer cards is faster than splitting it across
-more.** Two servers on four cards each delivered 1.71× the throughput of one
-server on all eight, same hardware, for 1.19× the power. The usual advice is
-to maximise tensor parallelism. On a ×8 interconnect that advice is wrong.
+**Model size does not predict output quality.** Six models scored against a
+frozen ten-trap rubric. Five landed at 6 or 7 out of 10 regardless of parameter
+count, active parameters, vendor or quantization. A 229B model did not beat a
+35B one. [Chapter 2](paper/02-output-quality.md)
 
-**Reasoning models make the standard latency metric meaningless.** Time to
-first token read 48 ms while the user waited 19.9 seconds for the first word
-they could see. A 415× gap that no standard benchmarking tool reports.
+**Carefully scoped 4-bit quantization costs nothing measurable.** Two controlled
+pairs, same weights in bf16 and AWQ INT4, identical first-output scores down to
+which specific traps failed. The caveat is that this is a property of the
+uploader's module selection as much as of the method.
+[Chapter 2](paper/02-output-quality.md)
 
-## The paper
+**No model fabricated anything.** Across six models and roughly thirty
+correction turns, not one invented a sysfs path or claimed an unavailable tool to
+cover being told it was wrong. [Chapter 2](paper/02-output-quality.md)
 
-**[Chapter 1: Throughput, power and the limits of the platform](paper/chapter-1.md)**
+**Two defects in AMD-published images, found by running them.** A hardcoded
+gated-activation factor that breaks non-gated MoE models, and a class-name list
+missing its RDNA3 entry that prevents any compressed-tensors W4A16 MoE from
+loading at all. Both shipped because there is no gfx1100 CI runner.
+[Chapter 1.1](paper/01a-what-the-image-costs.md),
+[vLLM #56790](https://github.com/vllm-project/vllm/issues/56790)
 
-45 logged benchmark configurations plus roughly 30 targeted measurements,
-across five model families from 9 B to 357 B parameters. Interconnect,
-weight formats, parallelism strategy, thermal and electrical limits, and a
-specific account of what AMD could change.
+## Chapters
 
-**Chapter 2: Output quality, in progress. Chapter 1 measures rate and says
-so in its first limitation. Chapter 2 measures whether the output is any good,
-using a frozen task with a known-correct answer and a mechanical rubric.
+| | |
+|---|---|
+| [01 — Throughput and power](paper/01-throughput-and-power.md) | What ten consumer AMD cards deliver, and what they draw doing it. |
+| [01a — What the image costs](paper/01a-what-the-image-costs.md) | The software stack is not a constant. Two images, four configurations, up to 53 percent apart at long context. |
+| [02 — Output quality](paper/02-output-quality.md) | Six models against a frozen rubric. Size did not predict quality, and quantization cost nothing. |
 
-## What is here
+## Tools
 
-```
-paper/        the chapters
-tasks/        frozen evaluation tasks and scores
-tools/        the tooling that produced the measurements
-data/         raw benchmark logs
-```
+Everything used to produce the numbers is here, so the numbers can be checked.
 
-### Tooling
+| | |
+|---|---|
+| [`bench/n02-bench`](bench/n02-bench) | Throughput harness. Exact prompt lengths verified against the server's tokenizer, pinned output length, discarded warm-up, median of three, decode measured separately from prefill. |
+| [`tasks/task-01-sysfs-collector.md`](tasks/task-01-sysfs-collector.md) | The frozen evaluation rubric. Ten binary traps, all mechanically checkable, all derived from defects hit during a real build. |
+| [`tasks/scores.jsonl`](tasks/scores.jsonl) | Every score, one row per model per run, with configuration and caveats attached. |
+| [`bench/`](bench/) | Raw JSONL output behind every figure in the chapters. |
 
-**`n02-fleet`** is a declarative multi-server vLLM launcher. Configs name GPUs
-by `unique_id` rather than by index, and every launch is verified against
-sysfs before it is reported as successful.
+## The machine
 
-**`n02-ask`** is a logging conversation driver. It counts tokens before
-sending, refuses rather than letting a reply truncate silently, and records
-wall time, throughput and time to first token for every turn.
+| | |
+|---|---|
+| GPUs | 10× RX 7900 XTX, gfx1100, 240 GB aggregate VRAM |
+| CPU | EPYC 7663, 56 core Milan |
+| Board | ASRock Rack ROMED8-2T/BCM |
+| Memory | 512 GB DDR4-3200 ECC, 8 channels |
+| Interconnect | PCIe Gen4 x8 to every card, no bridges, no fabric |
+| Power | Multiple supplies on a 20 A 240 V dedicated circuit |
+| Cooling | Open bench, garage |
 
-**`n02-modelscan`** searches the Hugging Face Hub and filters on the
-constraints that actually decide whether a model will run: whether vLLM
-registers the architecture, what the weight format is, and whether the
-arithmetic fits against measured bytes per parameter.
+Every measurement in this repository names the container image it was taken on.
+Given the finding in Chapter 1.1, a throughput number without an image tag is not
+a measurement.
 
-**`fenstone-monitor`** is fleet telemetry. The collector runs on the inference
-host and the server and dashboard run elsewhere, because software running on a
-machine cannot report that machine being down.
+## Coming
 
-## Findings that cost us the most time
+**Kernel work.** Decode Context Parallelism exists upstream and shards the KV
+cache along the sequence dimension rather than by attention head, which is the
+direct fix for the head-count floor. It is unavailable on gfx1100 because no
+attention backend on this architecture returns the softmax log-sum-exp during
+decode. The state needed to produce it is already computed and already exported
+by the Triton path. There is precedent for the work on two other architectures
+and none on this one.
 
-Recorded here because each one presents as something it is not.
+**A harder task.** Task 01 establishes a floor and cannot rank above it. The next
+one needs traps that separate rather than gate.
 
-**Link width is not what the GPU reports.** Every card says ×16. That describes
-a link inside the card's own bridge. The root port, three levels up the sysfs
-tree, says ×8. We caught it by arithmetic: 41 % efficiency is not plausible for
-a well-formed ×16 link, 83 % is unremarkable for ×8.
+**Tool access.** Every defect recorded in Chapter 2 was discoverable by one shell
+command. If defect counts collapse when the model can run commands, the gap is
+grounding rather than capability, which is worth more than any score in the
+table.
 
-**A container process limit caps you at two model servers.** Rootless podman
-defaults to `pids.max = 2048`. Two vLLM servers consume about 1,726. The third
-fails with an OpenMP thread creation error that looks like a GPU or network
-fault and is neither.
+## Corrections
 
-**Prefix caching inflates published throughput by up to 1.74×.** Hit rate fell
-from 63.2 % to 10.3 % within a single sweep. What looked like a throughput
-collapse at high concurrency was the cache draining. We nearly published the
-artifact as a hardware finding.
+Wanted, particularly on anything here that is wrong. Several claims in earlier
+drafts were withdrawn after being disproved by the machine itself, and those
+withdrawals are recorded in the chapters rather than deleted.
 
-**Several standard tools report wrong values on this platform.** `rocm-smi`
-power reporting fails. `--showmemuse` reports 0 % on cards holding weights.
-Suspended cards report 0 °C, 0 W and Gen1 ×1. The sysfs values are correct
-where the tooling is not.
+Open an issue.
 
-**One card has a thermal-interface fault identifiable by signature alone:**
-highest junction temperature, *lowest* memory temperature, a 32 °C
-core-to-memory spread against 5 to 14 °C fleet-wide, coolest at idle, fastest
-to cool. Slot position and power were both eliminated. We record the signature
-because it is diagnostic and we could not find it documented.
+## License
 
-## Upstream contributions
-
-- **vLLM [#56790](https://github.com/vllm-project/vllm/issues/56790)**: the RDNA3
-  fused-MoE path hardcodes a 2× gated-activation factor, which breaks
-  non-gated (ReLU²) models such as NVIDIA's Nemotron 3. Reported with a root
-  cause and a verified one-line fix, tested on this hardware.
-
-## Scope
-
-One machine, one operator, no replication across hardware. Ten cards from four
-manufacturers with three firmware revisions among one vendor's five, which is
-representative of what a secondhand-constrained buyer actually assembles and
-introduces variance we have characterised but not eliminated.
-
-Where a finding could be confirmed against public sources we say so. Where it
-could not, we say that too.
-
-## Reproducibility
-
-Every table in the paper traces to a logged row with recorded conditions:
-model, quantization, parallel degree, concurrency, prefix-caching state, power
-caps, ambient temperature and thermal telemetry captured alongside each run.
-Runs where any card exceeded 100 °C junction are flagged and excluded from
-performance claims.
-
-## Contact
-
-Issues and corrections welcome. If you are running RDNA3 multi-GPU and hit
-something in here, or something that contradicts it, open an issue.
-
-SovereignAI Solutions Inc., trading as Fenstone Markit. Canada.
+MIT. Fenstone Markit is the trading name of SovereignAI Solutions Inc.,
+Alberta, Canada.
