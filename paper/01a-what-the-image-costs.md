@@ -1,18 +1,34 @@
 # Chapter 1.1: What the Image Costs
 
 Same hardware, same weights, same prompts. Two container images published by AMD
-five days apart. Long-context decode throughput differs by up to 53 percent.
+five days apart.
+
+## Findings
+
+1. **Long-context decode differs by up to 53 % between the two images**, on
+   identical hardware and weights. At 16,000 tokens the newer image costs 41 to
+   53 %. At 503 tokens the two are indistinguishable, so a short-prompt
+   benchmark would call them equivalent.
+2. **Prefill is untouched by the image.** Parallelism alone sets it: TP=4 and
+   PP=2×TP=2 differ by 1.6× at 16K, identically on both images.
+3. **Running past the model's KV head count is nearly free on the older image**
+   (8 % at 16K) and three times costlier on the newer one (27 %). It is
+   expensive on this software, not on this hardware.
+4. **Two upgrade traps:** the newer image cannot load any compressed-tensors
+   W4A16 mixture-of-experts on gfx1100, because one class name is missing from a
+   list, and it silently gives you a quarter of the KV cache you asked for.
 
 Chapter 1 treated the software stack as a constant, named once in the setup and
 never examined. It is not a constant. It is the largest single variable in these
 measurements, larger than tensor parallel degree and larger than the choice
-between pipeline and tensor parallelism.
+between pipeline and tensor parallelism. The rest of this chapter shows how each
+finding was measured.
 
 ## The two images
 
 Both are on Docker Hub. Both are what an RDNA3 user would pull today.
 
-| | Older | Newer |
+| Property | Older | Newer |
 |---|---|---|
 | Tag | `rocm7.14.1_rdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0` | `rocm10.0.0_ubuntu24.04_py3.14_pytorch_2.12.0_vllm_0.27.0` |
 | Built | 2026-09-01 | 2026-08-27 |

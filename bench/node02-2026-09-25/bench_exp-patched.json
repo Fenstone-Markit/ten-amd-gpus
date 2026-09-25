@@ -1,0 +1,43 @@
+{
+ "label": "exp-patched",
+ "port": 8010,
+ "time_utc": "2026-09-25T18:59:32Z",
+ "runs": [
+  {
+   "ctx": 2000,
+   "first_token_s": 0.7646470069885254,
+   "ms_per_token": 18.638769785563152,
+   "tokens": 64
+  },
+  {
+   "ctx": 2000,
+   "first_token_s": 0.0343935489654541,
+   "ms_per_token": 18.633305080353267,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 5.568596839904785,
+   "ms_per_token": 20.027395278688463,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 0.07062888145446777,
+   "ms_per_token": 20.092381371392147,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 25.215764045715332,
+   "ms_per_token": 24.543962781391446,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 0.1862947940826416,
+   "ms_per_token": 24.566048667544408,
+   "tokens": 64
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+--- rdna3_w4a16.py	2026-09-25 17:33:23.681260885 +0000
++++ rdna3_w4a16_patched.py	2026-09-25 17:58:55.580327882 +0000
+@@ -19,12 +19,14 @@
+ from vllm.model_executor.parameter import BasevLLMParameter, permute_param_layout_
+ from vllm.platforms import current_platform
+ from vllm.scalar_type import scalar_types
++from vllm.model_executor.layers.quantization.utils import replace_parameter  # [fenstone patch]
+ 
+ from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
+ 
+ 
+ class RDNA3W4A16LinearKernel(MPLinearKernel):
+-    SUPPORTED_QUANT_TYPES = [scalar_types.uint4b8]
++    # [fenstone patch] uint4 added: asymmetric compressed-tensors checkpoints with explicit zeros
++    SUPPORTED_QUANT_TYPES = [scalar_types.uint4b8, scalar_types.uint4]
+ 
+     @classmethod
+     def get_min_capability(cls) -> int:
+@@ -126,6 +128,25 @@
+             setattr(
+                 layer, self.w_zp_name, torch.nn.Parameter(zeros, requires_grad=False)
+             )
++        else:
++            # [fenstone patch] The checkpoint supplies its own zero points. Accept only the
++            # compressed-tensors layout [N//8, K//G], N packed on dim 0, and transpose it to
++            # the kernel's [K//G, N//8] (same as TritonW4A16LinearKernel). GPTQ and AWQ store
++            # zeros with other conventions and must fail here rather than dequantise wrongly.
++            zp = getattr(layer, self.w_zp_name)
++            groups = c.partition_weight_shape[0] // c.group_size
++            n8 = c.partition_weight_shape[1] // 8
++            packed_dim = getattr(zp, "packed_dim", None)
++            if tuple(zp.shape) != (n8, groups) or packed_dim != 0:
++                raise NotImplementedError(
++                    f"RDNA3 W4A16 [fenstone patch]: zero points {tuple(zp.shape)}, packed_dim "
++                    f"{packed_dim}, are not the compressed-tensors layout ({n8}, {groups}) on dim 0"
++                )
++            replace_parameter(
++                layer,
++                self.w_zp_name,
++                torch.nn.Parameter(zp.data.t().contiguous(), requires_grad=False),
++            )
+ 
+         # Act-order: convert g_idx to the inverse permutation array exllama
+         # expects (kernel reads a[perm[k]] instead of using groups indirected
+@@ -186,7 +207,8 @@
+         assert w_zp is not None, "Zero points are required by RDNA3 W4A16"
+         assert w_g_idx is not None, "g_idx tensor (possibly empty) required"
+ 
+-        output = ops.gptq_gemm_rdna3(x_2d, w_q, w_zp, w_s, w_g_idx, False)
++        # [fenstone patch] explicit zero points are true zeros: no GPTQ +1 (use_v2_format)
++        output = ops.gptq_gemm_rdna3(x_2d, w_q, w_zp, w_s, w_g_idx, c.zero_points)
+ 
+         if bias is not None:
+             output.add_(bias)

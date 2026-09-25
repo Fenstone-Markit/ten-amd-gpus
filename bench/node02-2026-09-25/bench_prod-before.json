@@ -1,0 +1,43 @@
+{
+ "label": "prod-before",
+ "port": 8000,
+ "time_utc": "2026-09-25T18:06:25Z",
+ "runs": [
+  {
+   "ctx": 2000,
+   "first_token_s": 0.7953002452850342,
+   "ms_per_token": 30.726323052058145,
+   "tokens": 64
+  },
+  {
+   "ctx": 2000,
+   "first_token_s": 0.05254936218261719,
+   "ms_per_token": 30.741282871791295,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 5.981303453445435,
+   "ms_per_token": 32.104321888514924,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 0.10666799545288086,
+   "ms_per_token": 32.15380698915512,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 26.484777688980103,
+   "ms_per_token": 36.44258256942507,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 0.22328996658325195,
+   "ms_per_token": 36.51824073185996,
+   "tokens": 64
+  }
+ ]
+}

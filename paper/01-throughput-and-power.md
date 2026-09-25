@@ -2,49 +2,46 @@
 
 ### Chapter 1: Throughput, power and the limits of the platform
 
-*A love and frustrated letter to AMD*
-
-## Abstract
+*A love letter to AMD, and a frustrated one*
 
 Almost everything published about running large language models locally
 assumes one of two things: a single graphics card, or a datacenter. This paper
 describes the space between. Ten consumer gaming GPUs, 240 GB of combined
-memory, on one machine, in a garage.
+memory, on one machine, in a garage. It works, and better than we expected.
 
-The headline result is that it works, and better than we expected. Ten RX 7900
-XTX cards serve a **357-billion-parameter model at 23.3 tokens per second**,
-only 25 % slower than a 72 B model on the same hardware, and on less power. A
-36 B mixture-of-experts runs at 84.6 tokens per second on four cards drawing
-821 W. Five independent servers across ten cards reach 1,965 tokens per second
-aggregate, at 95 % of linear scaling.
+## Findings
 
-We ran 45 logged benchmark configurations plus roughly 30 targeted
-measurements, across five model families from 9 B to 357 B parameters. Two
-results surprised us and we could not find them documented elsewhere.
+1. **Ten RX 7900 XTX serve a 357-billion-parameter model at 23.3 tokens per
+   second**, only 25 % slower than a 72 B model on the same cards, and on less
+   power. §6
+2. **Fewer cards per model beats more.** Two servers on four cards each
+   delivered 1.71× the throughput of one server on all eight, for 1.19× the
+   power. Five two-card servers reached 1,965 tokens per second, 95 % of linear
+   scaling. The usual advice to maximise tensor parallelism is wrong on this
+   interconnect. §5.5
+3. **Time to first token is meaningless for reasoning models.** It read 48 ms
+   while the user waited 19.9 seconds for the first visible word, a 415× gap
+   that every standard tool misses. §5.7
+4. **Prefix caching inflates published throughput by up to 1.74×.** What looked
+   like a collapse at high concurrency was the cache draining. §5.2
+5. **4-bit quantization costs nothing on mixture-of-experts and about 2× on a
+   dense model**, and the evidence points at which kernel each path loads
+   rather than at 4-bit arithmetic itself. A 36 B mixture-of-experts runs at 84.6 tokens per
+   second on four cards drawing 821 W. §4.3
+6. **FP8 mixture-of-experts does not load at all.** The cause is a kernel library
+   scoped to datacenter parts, not the silicon. §4.1, §8.3
+7. **The electrical circuit binds before the hardware does.** Peak draw is
+   3,108 W. The previous 15 A / 110 V circuit was at its limit with four
+   cards. §7.1
+8. **Standard tools report wrong values on this platform**: link width, power,
+   memory use and link speed, each shown wrong and each with a working
+   substitute. §3.1, §3.3, §7.5
+9. **An undocumented container limit caps you at two model servers** until you
+   raise it. §7.3
 
-**Splitting a model across fewer cards is faster than splitting it across
-more.** Two servers using four cards each delivered 1.71× the throughput of
-one server using all eight, on identical hardware, for 1.19× the power. The
-conventional assumption is to maximise tensor parallelism. On this
-interconnect that assumption is wrong.
-
-**Reasoning models make the standard latency benchmark meaningless.** Time to
-first token, the metric everyone reports, read 48 milliseconds while the user
-waited 19.9 seconds for the first word they could actually see. A 415× gap,
-invisible to every standard tool.
-
-We also record what it costs and where it stops. The electrical circuit binds
-before the hardware does. Several standard measurement tools report wrong
-values on this platform. A container process limit nobody documents caps you
-at two model servers until you find it. And one weight format, FP8
-mixture-of-experts, does not load at all.
-
-That last item traces to a kernel library scoped to datacenter parts rather
-than to anything about the silicon. Section 8 makes a specific case for what
-would close it.
-
-**This chapter measures rate. It does not measure whether the output is any
-good. Chapter 2 takes that up.
+**This chapter measures rate, not whether the output is any good.** Chapter 2
+takes that up. The sections below walk through how each finding was reached,
+starting with what the results do not establish.
 
 ## 1. Scope and limitations
 
@@ -78,6 +75,10 @@ The host is an AMD EPYC 7663 with 56 cores on an ASRock Rack ROMED8-2T/BCM
 board, 512 GB of DDR4 ECC across eight channels. Every root port runs PCIe
 Gen4 ×8, which is not what the cards report and is the subject of §3.1. Power
 comes from a dedicated 20 A / 240 V circuit.
+
+Every figure in this chapter was measured with each card on its own root port.
+The ten cards have since been moved behind a single PCIe Gen4 switch; Chapter 1.2
+covers what that changed, including one switch default that cost 32 % of prefill.
 
 Software is vLLM 0.23.1 on ROCm 7.14.1, torch 2.11.0, under rootless podman
 5.7.0.
@@ -123,7 +124,10 @@ Channel count is not the limiting factor. We report the negative result to
 save someone else the experiment.
 
 vLLM's optimised custom all-reduce is disabled by the platform, not by
-configuration. All collectives run through RCCL.
+configuration: the enabling check lists only the MI300-class architectures
+(`gfx94`, `gfx95`), even where every card pair reports peer access. All
+collectives run through RCCL. An open pull request adds an RDNA3 path
+(vLLM #57767); it has not been tested here.
 
 ### 3.3 Measurement hazard: suspended links
 
@@ -138,7 +142,7 @@ catching it.
 |---|---|---|
 | bf16 | works, native | works, native |
 | FP8 | not tested | **does not load** |
-| AWQ INT4 | works, ≈2× slower | works, no measured penalty |
+| AWQ INT4 | works, ≈2× slower (§4.3) | works, no measured penalty |
 
 ### 4.1 FP8 mixture-of-experts does not load
 
@@ -190,19 +194,20 @@ which behave differently (§9).
 
 ### 4.3 The AWQ penalty depends on architecture
 
-Selected automatically as `awq_marlin`. Mixture-of-experts models use the same
-path. No separate backend is required, unlike FP8.
+Neither model needed a separate backend, unlike FP8. Which kernel executed the
+quantized layers was not recorded at the time, and an earlier version of this
+section named it wrongly; see the correction below.
 
 Dense model, Qwen2.5-72B, 8-way tensor parallel:
 
-| | bf16 | AWQ INT4 |
+| Measure | bf16 | AWQ INT4 |
 |---|---|---|
 | tok/s, 1 request | **30.9** | 15.0 |
 | Watts | 2,139 | 2,574 |
 
 Mixture-of-experts, Qwen3.6-35B-A3B, 4-way:
 
-| | bf16 | AWQ INT4 |
+| Measure | bf16 | AWQ INT4 |
 |---|---|---|
 | tok/s, 1 request | 82.2 | **84.6** |
 | tok/s, 8 concurrent | 272.7 | **414.3** |
@@ -212,12 +217,21 @@ Mixture-of-experts, Qwen3.6-35B-A3B, 4-way:
 Both comparisons are controlled. Same model, same parallel degree,
 quantization the only variable.
 
-**Proposed mechanism, not established.** Marlin unpacks INT4 to FP16 before
-each matrix multiply. On a dense model every parameter is unpacked every
-token. On a mixture-of-experts model with 3 B of 36 B parameters active, that
-work is small relative to routing and memory movement. The two models also
-differ in size, family and parallel degree, so we present this as the most
-plausible explanation rather than a demonstrated cause.
+**Correction.** An earlier version of this section attributed the dense penalty
+to Marlin unpacking INT4 before each multiply. Marlin does not run on ROCm at
+all (§4.1), so that explanation cannot be right, and it is withdrawn.
+
+Chapter 1.2 found a mechanism of the right size in a closely related path. For
+compressed-tensors W4A16 checkpoints on this stack, vLLM runs every dense
+quantized layer through a Triton kernel that walks the full reduction dimension
+serially and, once the model is compiled, keeps a tile sized for large batches
+even at batch 1. A native RDNA3 kernel exists in the same image and is skipped.
+Switching to it made single-stream decode on a dense 27 B model 1.49 to 1.65×
+faster, depending on context length. The mixture-of-experts path on this stack,
+by contrast, loads a native RDNA3 MoE kernel (Chapter 1.1 records the log line),
+which fits the MoE model showing no penalty. Whether the 72 B AWQ checkpoint took
+the same Triton path was not recorded, so this is consistent with the result
+above rather than a demonstration of its cause.
 
 The concurrent-request gap is amplified by the bf16 variant being
 cache-constrained at 27× concurrency where AWQ had 134× available.
@@ -309,15 +323,18 @@ Five servers reached 4.77× a single server, which is 95 % of linear, with a
 
 **On this interconnect, tensor parallelism costs roughly 40 % of per-card
 throughput at these model sizes, while additional independent servers cost
-almost nothing.** We attribute this to ×8 root ports and RCCL-only
-collectives. The result may not transfer to systems with wider links or
-working custom all-reduce.
+almost nothing.** We attributed this to ×8 root ports and RCCL-only
+collectives. Chapter 1.2 found a second contributor: at the smaller per-card
+matrix shapes that high tensor parallelism produces, the quantized matrix
+kernels run far below memory bandwidth, so each card's work shrinks much less
+than the division suggests. The result may not transfer to systems with wider
+links, working custom all-reduce, or different kernels.
 
 ### 5.6 Pipeline parallelism
 
 Qwen2.5-72B on eight cards, same harness:
 
-| | 8-way tensor | 2-stage pipeline × 4-way tensor |
+| Measure | 8-way tensor | 2-stage pipeline × 4-way tensor |
 |---|---|---|
 | tok/s, 1 request | **30.9** | 19.9 |
 | tok/s, 8 concurrent | **158.6** | 120.6 |
@@ -338,7 +355,7 @@ but starts too far behind to overtake.
 
 Qwen3.6-35B-A3B, identical prompt:
 
-| | reasoning on | reasoning off |
+| Measure | reasoning on | reasoning off |
 |---|---|---|
 | tok/s | 88.9 | 95.8 |
 | tokens per request | 1,998 (**90 % trace**) | 1,100 |
@@ -411,7 +428,9 @@ that mentions it.
 ### 7.2 Thermal
 
 Eight cards without auxiliary airflow reached 110 °C and aborted a soak at 68
-seconds. Ten cards with four 120 mm fans peak at 89 °C junction.
+seconds. Ten cards with four 120 mm fans peak at 89 °C junction. A later and
+heavier run, eight cards at 100 % busy and 2,428 W fleet draw, plateaued at
+93 °C for seventeen minutes: an equilibrium, not a climb.
 
 By vendor cap group, under identical load:
 
@@ -552,6 +571,11 @@ kernel coverage rather than to hardware:
 - **Fallbacks are taken silently.** ROCm's optimised paged-attention kernel
   declined our configuration and fell back to a portable implementation. It
   worked correctly. Nothing in a benchmark result would tell you it happened.
+- **A native kernel that ships and is not used.** The image contains an RDNA3
+  quantized matrix kernel written for this exact GPU. vLLM skips it for
+  asymmetric checkpoints and runs a slower Triton path instead, with no message.
+  Selecting it made decode 1.49 to 1.65× faster on a dense 27 B model
+  (Chapter 1.2).
 
 Read together, these say something encouraging. **The numbers in this paper
 are a floor, not a ceiling.** We measured untuned kernels on fallback paths
@@ -588,9 +612,11 @@ count. A model with two KV heads runs at TP=4. The genuine divisibility
 constraint on this platform is block quantization, §4.2, which limits
 partition width rather than head count.
 
-**On parallelism.** Run more servers at lower parallel degree rather than
-fewer at higher. On a ×8 interconnect the collective cost dominates before the
-compute does.
+**On parallelism.** For throughput under many users, run more servers at
+lower parallel degree rather than fewer at higher. On a ×8 interconnect the
+collective cost dominates before the compute does. For a single user on a
+model that needs several cards, the answer can reverse: the 27 B model in
+Chapter 1.2 decodes fastest at the highest degree that fits. Measure both.
 
 **On measurement.** Disable prefix caching before publishing any throughput
 figure. Hold the harness constant across comparisons. Treat every instrument
@@ -631,6 +657,7 @@ excluded from performance claims.
   next.
 - Sustained agentic or production workload measurement.
 - Whether the INT4 dense-versus-MoE penalty difference is architectural.
-- Speculative decoding, unmeasured on this architecture.
+  Partly answered: it tracks which kernel each path loads (§4.3, Chapter 1.2).
+- Speculative decoding. Measured since: +40 to 54 % on a 9 B model on one card,
+  9 % slower on the 27 B at four-way tensor parallel. See Chapter 1.2.
 - A floor-capped power series for cross-platform comparison.
-v

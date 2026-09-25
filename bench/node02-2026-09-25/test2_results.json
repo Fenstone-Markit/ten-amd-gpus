@@ -1,0 +1,178 @@
+{
+  "kernels": {
+    "installed": {
+      "names": [
+        "void at::native::vectorized_elementwise_kernel<8, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+        "void vllm::gptq_rdna3::gemm_q4_kernel_rdna3<__hip_bfloat16, 1>(__hip_bfloat16 const*, unsigned int const*, unsigned int const*, __hip_bfloat16 const*, __hip_bfloat16*, int, int, int, int, int, int const*)"
+      ],
+      "ok": true
+    },
+    "b256": {
+      "names": [
+        "void at::native::vectorized_elementwise_kernel<8, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+        "void vllmht_b256::gptq_rdna3::gemm_q4_kernel_rdna3<__hip_bfloat16, 1>(__hip_bfloat16 const*, unsigned int const*, unsigned int const*, __hip_bfloat16 const*, __hip_bfloat16*, int, int, int, int, int)"
+      ],
+      "ok": true
+    },
+    "b128": {
+      "names": [
+        "void at::native::vectorized_elementwise_kernel<8, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+        "void vllmht_b128::gptq_rdna3::gemm_q4_kernel_rdna3<__hip_bfloat16, 1>(__hip_bfloat16 const*, unsigned int const*, unsigned int const*, __hip_bfloat16 const*, __hip_bfloat16*, int, int, int, int, int)"
+      ],
+      "ok": true
+    }
+  },
+  "gate": {
+    "q": {
+      "self": 0.007728794123977423,
+      "limit": 0.02,
+      "b256": 0.007364755030721426,
+      "b256_broken": 0.9243329167366028,
+      "b128": 0.00949020590633154,
+      "b128_broken": 0.924150288105011
+    },
+    "k": {
+      "self": 0.0077224001288414,
+      "limit": 0.02,
+      "b256": 0.007951050996780396,
+      "b256_broken": 1.0125019550323486,
+      "b128": 0.011016645468771458,
+      "b128_broken": 1.0121395587921143
+    },
+    "v": {
+      "self": 0.007658204063773155,
+      "limit": 0.02,
+      "b256": 0.007177595980465412,
+      "b256_broken": 0.9703834652900696,
+      "b128": 0.009743429720401764,
+      "b128_broken": 0.9696189165115356
+    },
+    "o": {
+      "self": 0.002762084361165762,
+      "limit": 0.011048337444663048,
+      "b256": 0.0022241894621402025,
+      "b256_broken": 0.9172707796096802,
+      "b128": 0.00457473611459136,
+      "b128_broken": 0.9172533750534058
+    },
+    "gate": {
+      "self": 0.007397684268653393,
+      "limit": 0.02,
+      "b256": 0.007294920273125172,
+      "b256_broken": 0.9127765893936157,
+      "b128": 0.009829608723521233,
+      "b128_broken": 0.912803590297699
+    },
+    "up": {
+      "self": 0.007061588577926159,
+      "limit": 0.02,
+      "b256": 0.007414670195430517,
+      "b256_broken": 0.9337607026100159,
+      "b128": 0.009730271995067596,
+      "b128_broken": 0.9338808059692383
+    },
+    "down": {
+      "self": 0.005142740439623594,
+      "limit": 0.02,
+      "b256": 0.0051361205987632275,
+      "b256_broken": 0.9576935768127441,
+      "b128": 0.006751008331775665,
+      "b128_broken": 0.9577948451042175
+    },
+    "qkvz": {
+      "self": 0.008119206875562668,
+      "limit": 0.02,
+      "b256": 0.0077005899511277676,
+      "b256_broken": 0.9538030624389648,
+      "b128": 0.009694980457425117,
+      "b128_broken": 0.9537048935890198
+    },
+    "gdn_out": {
+      "self": 0.002536024898290634,
+      "limit": 0.010144099593162537,
+      "b256": 0.0022506280802190304,
+      "b256_broken": 0.7814160585403442,
+      "b128": 0.004606238100677729,
+      "b128_broken": 0.7813871502876282
+    },
+    "gate_tp2": {
+      "self": 0.007312358357012272,
+      "limit": 0.02,
+      "b256": 0.007295715622603893,
+      "b256_broken": 0.9408286213874817,
+      "b128": 0.00992839876562357,
+      "b128_broken": 0.9408316612243652
+    }
+  },
+  "gate_passed": {
+    "b256": true,
+    "b128": true
+  },
+  "timing": {
+    "q": {
+      "installed": 25.267465114593506,
+      "b256": 24.028064012527466,
+      "b128": 18.982800245285034
+    },
+    "k": {
+      "installed": 23.589073936894255,
+      "b256": 22.279062810933816,
+      "b128": 17.97523228627331
+    },
+    "v": {
+      "installed": 23.60067907369362,
+      "b256": 25.334932219307376,
+      "b128": 19.656480933135413
+    },
+    "o": {
+      "installed": 26.17759354370462,
+      "b256": 24.655641135522878,
+      "b128": 18.62054288724048
+    },
+    "gate": {
+      "installed": 27.526110410690308,
+      "b256": 25.287070274353027,
+      "b128": 19.3812096118927
+    },
+    "up": {
+      "installed": 27.502294778823853,
+      "b256": 25.29268503189087,
+      "b128": 19.38661515712738
+    },
+    "down": {
+      "installed": 25.900490283966064,
+      "b256": 24.49746012687683,
+      "b128": 18.17740023136139
+    },
+    "qkvz": {
+      "installed": 25.57086944580078,
+      "b256": 24.05925989151001,
+      "b128": 19.79281485080719
+    },
+    "gdn_out": {
+      "installed": 23.056745529174805,
+      "b256": 21.63368025742008,
+      "b128": 17.066511057190976
+    },
+    "gate_tp2": {
+      "installed": 38.83722543716431,
+      "b256": 38.16280961036682,
+      "b128": 38.407214879989624
+    }
+  },
+  "tp8_total_ms": {
+    "installed": 9.068675070274564,
+    "b256": 8.517332437463615,
+    "b128": 6.6004364341820825
+  },
+  "control_off_by_more_than_5pct": [
+    "k",
+    "v",
+    "o",
+    "gate",
+    "up",
+    "down",
+    "qkvz",
+    "gdn_out"
+  ]
+}

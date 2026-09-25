@@ -1,10 +1,31 @@
 # Chapter 2: Output Quality
 
 Chapter 1 measured how fast ten consumer AMD cards serve tokens and what that
-costs in watts. It said nothing about whether the tokens were any good.
+costs in watts. It said nothing about whether the tokens were any good. This
+chapter is the quality axis.
 
-This chapter is the quality axis. It is narrower than Chapter 1 and the result is
-a null one, which is itself the finding.
+## Findings
+
+1. **Model size did not predict quality.** Five independently scored runs landed
+   at 6 or 7 out of 10, across 35 B to 120 B total parameters, 3 B to 12 B
+   active, two vendors and two weight formats.
+2. **Carefully scoped 4-bit quantization cost nothing measurable.** Two
+   controlled pairs, bf16 against AWQ INT4 of the same model, produced identical
+   first-output scores down to which traps failed.
+3. **No model fabricated anything.** Across six models and roughly thirty
+   correction turns, none invented a path, a tool or a fact to cover being told
+   it was wrong.
+4. **The defects are grounding failures, not knowledge failures.** The largest
+   class was confident first-match guesses about this machine, and every defect
+   was discoverable by a single shell command.
+5. **Decode speed follows layer composition, not active parameters.** A 12 B
+   active model outran two 3 B active ones, because fewer than one layer in ten
+   carries attention.
+6. **The task measures a floor, not a ranking.** Everything of reasonable size
+   clears it, and it cannot separate models above it.
+
+The rest of this chapter walks through the task, the scoring, and how each
+finding was reached.
 
 ## Why not use published benchmarks
 
@@ -100,6 +121,11 @@ So: a carefully scoped 4-bit quantization costs nothing measurable on this task.
 A naive one that quantizes everything is a different artifact and has not been
 measured here. Anyone reading a score off a Hub repack is reading a property of
 that uploader's module selection as much as of the method.
+
+The kernel that executes a quantized checkpoint is a separate variable from the
+quantization itself, and it can change the output too. Chapter 2.1 measures one
+case: a faster kernel for the same weights that moved perplexity by 0.2 % and
+changed one computed digit sharply.
 
 ## The task does not discriminate above a low bar
 
@@ -202,6 +228,9 @@ Publishing this task means later models may train on it. Model release dates are
 recorded alongside scores for that reason.
 
 ## Next
+
+Chapter 2.1 takes up a different question: whether making the server faster
+changes what the model says.
 
 Task 01 has reached its limit. It establishes a floor and cannot rank above it.
 
