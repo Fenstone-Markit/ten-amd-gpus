@@ -1,7 +1,7 @@
 # Chapter 2.1: Does making it faster change what it says?
 
-*The companion to Chapter 1.2. Every speed change there was checked against the model's own output
-before I kept it. This chapter is how, and the three times the checking mattered.*
+*The companion to Chapter 1.2, on the same machine and image (`rocm/vllm:rocm7.14.1_rdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0`). Every speed change
+there was checked against the model's own output before I kept it. This chapter is how, and the three times the checking mattered.*
 
 A faster server is only worth having if it still gives the same answers. That sounds obvious. It is
 also the part of performance work that is easiest to skip, because a wrong kernel does not crash. It
@@ -29,6 +29,11 @@ speed change has to pass a check that is capable of failing, and I have to have 
 5. **The cause is how the kernel adds its partial results, and it is fixable.** It rounds to a
    16-bit format after every partial addition, where the slower kernel rounds once. Keeping the sum
    in 32 bits should remove the cost and keep most of the speed.
+
+> **Correction, 26 September 2026.** The 0.2 % perplexity figure in Finding 4 was measured on text
+> production itself wrote, which favours production at every near-tie. It is withdrawn as a measure of
+> the kernel's precision. The loss of repeatability, the digit, and the cause all stand. The fix in
+> Finding 5 is built and passes. See [Chapter 2.2](02b-the-speed-without-the-cost.md).
 
 ## The checks, as knobs
 
@@ -208,6 +213,11 @@ It has a ready-made test: the digit at token 131. Production is 99 % sure of it.
 should bring the patched server back close to that, with perplexity back at 1.609 and Check 3's
 differences down near production's own. Until it passes, the speed in Chapter 1.2's Knob 7 is a
 trade, and I am treating it as one.
+
+> **Update, 26 September 2026.** Built and gated: faster than the native kernel, at the 16-bit floor
+> against an exact reference, and bit-identical over 20 runs. The digit test moves to neutral text,
+> because the twelve texts here were written by production. See
+> [Chapter 2.2](02b-the-speed-without-the-cost.md).
 
 ## What this does not prove
 

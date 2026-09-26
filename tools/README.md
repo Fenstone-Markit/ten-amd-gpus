@@ -1,7 +1,7 @@
 # Tools
 
-The scripts behind Chapters 1.2 and 2.1. Every figure in those chapters came from one of these, and
-the raw output is in `bench/node02-2026-09-25/`.
+The scripts behind Chapters 1.2, 1.3, 2.1 and 2.2. Every figure in those chapters came from one of these,
+and the raw output is in `bench/node02-2026-09-25/` and `bench/node02-2026-09-26/`.
 
 They were written for one machine (Node02) and assume a working folder at `~/handtest`. Card UUIDs,
 the model path and the container names are set at the top of each script.
@@ -47,3 +47,15 @@ reference, with a deliberately broken control that has to fail.
 The batched correctness check for the Triton attention change in Chapter 2.1. It builds batches
 and includes a deliberately broken control, because the earlier single-request check passed a kernel
 that wrote out of bounds.
+
+## Added for Chapters 1.3 and 2.2
+
+| Script | What it does | Chapter |
+| --- | --- | --- |
+| `true_rate.py PORT` | Decode speed with tokens counted inside each streamed chunk, which speculative decoding needs | 1.3 |
+| `spec_counts.py` | Draft-token acceptance, read from the server's own counters over a window | 1.3 |
+| `itko_speed.py PORT SECONDS` | Real-traffic decode speed from the server's per-request timings while an agent works | 1.3 |
+| `allreduce_bench.py` | The collective at eight cards, Tree, Ring and automatic, inside CUDA graphs, sums checked | 1.3 |
+| `gate/attn_gate.py` | Attention segment count against a float64 reference, with a decoy-block control | 1.3 |
+| `qr_test.py`, `rdna_ar_test.py` | QuickReduce and the RDNA3 all-reduce on two cards: exact sums, bit-for-bit against RCCL, graph replays | 2.2 |
+| `kernel/gate_det.py`, `kernel/fp32_op_gate.py` | The fixed-order kernel's gate, and the build that packages it as a PyTorch operation | 2.2 |

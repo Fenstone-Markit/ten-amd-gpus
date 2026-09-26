@@ -1,0 +1,6 @@
+DECODE SPEED, finished requests: 68.0 tok/s (15801 tokens over 232 s of decode; exact, from vLLM's per-request timings)
+prefill per request: 1.20 s on average (the wait before each answer starts)
+window 60.0 min; busy generating 3.8 min (6%)
+cross-check, sampled: 65.9 tok/s while busy (reads a little low: partly busy intervals count as busy)
+prompt tokens processed 755688; requests finished 31; average prompt 24377 tokens
+speculation: 85.1% of draft tokens accepted; 1.85 tokens per step

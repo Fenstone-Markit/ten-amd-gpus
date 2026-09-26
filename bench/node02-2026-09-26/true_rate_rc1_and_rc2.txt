@@ -1,0 +1,14 @@
+# Exact decode rate, tokens counted inside each streamed chunk (tools/true_rate.py), port 8000.
+# Copied from the terminal output of the runs. The first 16K run after a restart includes warm-up.
+
+## rc1: fixed-order kernel, Ring, MTP one draft token, attention at 16 segments (2026-09-26 07:31 UTC)
+ctx~ 16000 run 1: 64 tokens in 38 chunks (1.68 per chunk), first token  6.12s, decode  21.1 ms/token =  47.5 tok/s
+ctx~ 16000 run 2: 64 tokens in 38 chunks (1.68 per chunk), first token  0.27s, decode  14.3 ms/token =  69.8 tok/s
+ctx~ 60000 run 1: 64 tokens in 35 chunks (1.83 per chunk), first token 24.47s, decode  15.5 ms/token =  64.7 tok/s
+ctx~ 60000 run 2: 64 tokens in 35 chunks (1.83 per chunk), first token  0.57s, decode  15.4 ms/token =  65.0 tok/s
+
+## rc2: rc1 plus attention at 128 segments (2026-09-26 10:57 UTC)
+ctx~ 16000 run 1: 64 tokens in 34 chunks (1.88 per chunk), first token  8.17s, decode  22.6 ms/token =  44.2 tok/s
+ctx~ 16000 run 2: 64 tokens in 34 chunks (1.88 per chunk), first token  0.26s, decode  12.4 ms/token =  80.4 tok/s
+ctx~ 60000 run 1: 64 tokens in 35 chunks (1.83 per chunk), first token 24.43s, decode  13.1 ms/token =  76.5 tok/s
+ctx~ 60000 run 2: 64 tokens in 35 chunks (1.83 per chunk), first token  0.57s, decode  13.1 ms/token =  76.4 tok/s

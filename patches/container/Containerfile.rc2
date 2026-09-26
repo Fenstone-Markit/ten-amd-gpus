@@ -1,0 +1,12 @@
+# Containerfile.rc2: the rc2 brain as an image. Build context: ~/brain/rc2 (the frozen release).
+#   podman build -t localhost/n02-brain:rc2 -f Containerfile.rc2 ~/brain/rc2
+# Base: the snapshot of production, which already carries the attention dispatch and buffer patches
+# (attention kernel b184d334..., backend 31f3473a...). rc2 adds three files on top:
+FROM localhost/n02-vllm:snap-20260925
+# 1. attention backend with NUM_PAR_SOFTMAX_SEGMENTS = 128 (md5 6eea73a19eafef97f5aab74da9ab2621)
+COPY triton_attn_s128.py /opt/python/lib/python3.14/site-packages/vllm/v1/attention/backends/triton_attn.py
+# 2. W4A16 layer routing M < 16 to the fixed-order fp32 op (md5 42840ce685a5cbea7046abae6021f344)
+COPY rdna3_w4a16_fp32.py /opt/python/lib/python3.14/site-packages/vllm/model_executor/kernels/linear/mixed_precision/rdna3_w4a16.py
+# 3. the fixed-order op library the layer loads (md5 d543b90d6ad7266db6744778a6edcba8)
+COPY fen_fp32_op.so /opt/fenstone/fen_fp32_op.so
+LABEL fenstone.release="rc2" fenstone.base="localhost/n02-vllm:snap-20260925"

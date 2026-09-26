@@ -1,6 +1,7 @@
 # Chapter 1.2: What the defaults cost
 
-*Node02: ten RX 7900 XTX (gfx1100), EPYC 7663, vLLM 0.23.1.dev1 on ROCm 7.14.1. The model is
+*Node02: ten RX 7900 XTX (gfx1100), EPYC 7663, vLLM 0.23.1.dev1 on ROCm 7.14.1, image
+`rocm/vllm:rocm7.14.1_rdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0`. The model is
 Qwen3.8-27B AWQ INT4, the one my agent actually runs on. Every number here was measured on this
 machine, two runs per point, and the two runs agreed to within 0.5 % unless I say otherwise.*
 
@@ -21,6 +22,9 @@ set wrong, by default, for this card.
 | Wait for the first word, 60K conversation | 26.6 s | **0.2 s** | 130× |
 
 Same cards, same model, same weights.
+
+> **Correction, 26 September 2026.** The 0.2 s wait in the last row is not supported by this
+> chapter's own measurements: Knob 1 below measured 0.51 s at 60K. The current build measures 0.57 s.
 
 ## Findings
 
@@ -179,6 +183,10 @@ Chapter 1 found the opposite: more servers on fewer cards each. **Measure the wo
 Worth about 1 ms per token. The all-reduces here move about 10 KB each, where the cost is the number
 of hops, not bandwidth, and a tree has fewer hops than a ring.
 
+> **Correction, 26 September 2026.** This was measured at four cards and deployed at eight. At eight
+> cards the tree is slower at every message size, by 3.2 ms per token at decode. The brain now runs
+> the ring. See [Chapter 1.3, Knob 8](01c-what-the-rest-of-the-stack-costs.md).
+
 ### Knob 7: the kernel that runs the quantized layers
 
 This is the big one, and it is not a flag. It is three small edits to one Python file.
@@ -230,6 +238,10 @@ I am finishing a version of the native kernel that adds its partial sums in fp32
 remove the precision cost while keeping most of the speed. Until then, this knob is a choice, not a
 free win.
 
+> **Update, 26 September 2026.** Done. The fixed-order version is faster than this one (41.4 tok/s at
+> 60K), at the precision floor, and bit-for-bit repeatable. See
+> [Chapter 2.2](02b-the-speed-without-the-cost.md).
+
 ## Knobs that did not work
 
 Worth listing, because each one looks promising and each one cost time.
@@ -242,6 +254,10 @@ Worth listing, because each one looks promising and each one cost time.
 | vLLM's custom all-reduce, QUICK_REDUCE | Cannot be enabled on this card by any flag. The check lists only MI300-class architectures, even though every card pair here has peer access |
 | Smaller tiles in the native kernel | 22 % faster on split shapes in isolation. On the real merged shapes, only 14 % at batch 1 and slightly slower at batch 4. Not a knob yet |
 | One card for the 27B | Does not fit with any usable cache |
+
+> **Update, 26 September 2026.** Speculative decoding is now 35 % faster at 60K, on eight cards with
+> the fixed kernel. The four-card result above stands for that configuration. See
+> [Chapter 1.3, Knob 9](01c-what-the-rest-of-the-stack-costs.md).
 
 ## Where the time goes now
 

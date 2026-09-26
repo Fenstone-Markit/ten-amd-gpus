@@ -1,0 +1,45 @@
+--- a/vllm/v1/attention/backends/triton_attn.py
++++ b/vllm/v1/attention/backends/triton_attn.py
+@@ -49,7 +49,7 @@
+ 
+ # constants
+ MIN_LAUNCH_GRID_SIZE_2D = 128  # Minimum launch grid size of 2D kernel
+-NUM_PAR_SOFTMAX_SEGMENTS = 16  # Number of parallel tiled softmax segments
++NUM_PAR_SOFTMAX_SEGMENTS = 128  # Number of parallel tiled softmax segments
+ 
+ 
+ @dataclass
+@@ -178,9 +178,17 @@
+ 
+         self.num_par_softmax_segments = NUM_PAR_SOFTMAX_SEGMENTS
+         headdim_padded = next_power_of_2(self.headdim)
++        # The 3D path is selected when max_seqlen_q <= 2 (dispatch gate) AND
++        # num_seqs <= seq_threshold_3D. The kernel and reduce_segments index the
++        # segment buffers by the GLOBAL query-token index, which runs to
++        # max_seqlen_q * num_seqs - 1 <= 2 * seq_threshold_3D - 1. So the buffer's
++        # first dimension must hold that many query tokens, not just seq_threshold_3D.
++        # (Sizing it to seq_threshold_3D overflows for any 2-token verify batch with
++        # num_seqs > seq_threshold_3D / 2, e.g. S>64 at the default threshold of 128.)
++        max_q_tokens_3D = 2 * self.seq_threshold_3D
+         self.softmax_segm_output = torch.empty(
+             (
+-                self.seq_threshold_3D,
++                max_q_tokens_3D,
+                 self.num_heads_q,
+                 self.num_par_softmax_segments,
+                 headdim_padded,
+@@ -189,12 +197,12 @@
+             device=device,
+         )
+         self.softmax_segm_max = torch.empty(
+-            (self.seq_threshold_3D, self.num_heads_q, self.num_par_softmax_segments),
++            (max_q_tokens_3D, self.num_heads_q, self.num_par_softmax_segments),
+             dtype=torch.float32,
+             device=device,
+         )
+         self.softmax_segm_expsum = torch.empty(
+-            (self.seq_threshold_3D, self.num_heads_q, self.num_par_softmax_segments),
++            (max_q_tokens_3D, self.num_heads_q, self.num_par_softmax_segments),
+             dtype=torch.float32,
+             device=device,
+         )

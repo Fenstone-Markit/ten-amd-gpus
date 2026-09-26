@@ -1,0 +1,11 @@
+--- a/vllm/v1/attention/ops/triton_unified_attention.py
++++ b/vllm/v1/attention/ops/triton_unified_attention.py
+@@ -926,7 +926,7 @@
+         or softmax_segm_output is None
+         or softmax_segm_max is None
+         or softmax_segm_expsum is None
+-        or max_seqlen_q > 1
++        or max_seqlen_q > 2
+         or num_seqs > seq_threshold_3D
+         or is_batch_invariant
+     )

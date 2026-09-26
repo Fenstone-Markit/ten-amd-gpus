@@ -12,55 +12,39 @@ and published as it goes, including the parts that turned out to be wrong.
 
 | On one 27B model, the one my agent runs on | Where I started | Where it is now |
 | --- | --- | --- |
-| Decode at 60,000 tokens of context | 4.59 tok/s | **40.7 tok/s** |
-| Decode at 2,000 tokens | 21.5 tok/s | **53.7 tok/s** |
-| Wait for the first word in a long conversation | 26.6 s | **0.2 s** |
+| Decode at 60,000 tokens of context | 4.59 tok/s | **76.4 tok/s** |
+| Decode at 16,000 tokens | 11.5 tok/s | **80.4 tok/s** |
+| Wait for the first word in a long conversation | 26.6 s | **0.6 s** |
+| My agent's real work, from the server's own counters, on the build before the last knob | not measured | **68.0 tok/s** |
 
-Same cards, same model, same weights. **The silicon was never the limit. The tuning was.** Every
-knob that moved these numbers, and what happens if you turn it either way, is in
-[Chapter 1.2](paper/01b-what-the-defaults-cost.md).
+Same cards, same model, same weights, with the quantized multiplies at the precision floor. **The
+silicon was never the limit. The tuning was.**
 
-## What has been found so far
+## To AMD: what you are leaving on the table
 
-**Four defaults cost 4.5× at long context, and none of them warn you.** The attention backend,
-prefix caching, the KV cache format, and a PCIe switch quietly routing card-to-card traffic through
-the CPU. No error, no log line, a clean dashboard.
-[Chapter 1.2](paper/01b-what-the-defaults-cost.md)
+Every row below is a software change, measured on this machine. Most are a few lines.
 
-**A native RDNA3 kernel ships in the image and is never used.** vLLM runs this model's quantized
-layers through a slower Triton path because one format is missing from one list. Selecting the
-native kernel is 1.49 to 1.65× faster at every context length measured.
-[Chapter 1.2](paper/01b-what-the-defaults-cost.md)
+| The fix | What it was worth here | Proof |
+| --- | --- | --- |
+| Accept asymmetric `uint4` in the RDNA3 W4A16 kernel's format list | 1.49 to 1.65× faster decode, from one missing list entry | [1.2](paper/01b-what-the-defaults-cost.md) |
+| Merge the fixed-order version of that kernel ([vLLM #54706](https://github.com/vllm-project/vllm/pull/54706)) | The same speed, at the precision floor, bit-for-bit repeatable | [2.2](paper/02b-the-speed-without-the-cost.md) |
+| Size long-context attention to the card instead of a fixed 16 segments | Attention at 60K from 7.2 to 1.6 ms per token | [1.3](paper/01c-what-the-rest-of-the-stack-costs.md) |
+| An eight-card RDNA3 all-reduce ([vLLM #57767](https://github.com/vllm-project/vllm/pull/57767) covers two and four) | All-reduce is now the largest single cost in a token | [1.3](paper/01c-what-the-rest-of-the-stack-costs.md) |
+| Fix QuickReduce for consumer cards, or compile it out of their image | Today it returns a wrong value in every element on this card | [2.2](paper/02b-the-speed-without-the-cost.md) |
+| An RDNA3 continuous-integration runner | Every defect in this repository shipped without one | all |
 
-**Faster can change what the model says, and a server can look healthy while talking nonsense.** A
-stale compiled graph produced a perplexity of 1.8 million on a server reporting healthy. The native
-kernel is correct but costs 0.2 % in perplexity and bit-for-bit repeatability, with one sharp miss on
-a digit in structured output. The fix is in progress.
-[Chapter 2.1](paper/02a-does-faster-change-what-it-says.md)
+With the defaults and settings in Chapters 1.2 and 1.3, these took one model from 4.59 to 76.4 tok/s
+at long context, on cards people already own. **The RX 7900 XTX already has the silicon. The software is
+leaving it on the table.**
 
-**The container image is the largest single variable in throughput.** Two AMD-published images
-built five days apart differ by up to 53 % in decode at 16K context, on identical hardware and
-weights, and are indistinguishable at 512 tokens.
-[Chapter 1.1](paper/01a-what-the-image-costs.md)
+## What else I found
 
-**Fewer cards per model beats more, for throughput.** Two four-card servers delivered 1.71× the
-throughput of one eight-card server, for 1.19× the power. Ten cards serve a 357B model at 23.3
-tok/s. [Chapter 1](paper/01-throughput-and-power.md)
-
-**Model size does not predict output quality, and carefully scoped 4-bit costs nothing
-measurable.** Five models from 35B to 120B landed at 6 or 7 out of 10 on a frozen rubric. No model
-fabricated anything across roughly thirty correction turns.
-[Chapter 2](paper/02-output-quality.md)
-
-**Defects in shipped software, found by running it.** A class-name list that stops any
-compressed-tensors W4A16 mixture-of-experts from loading on gfx1100
-([vLLM #56790](https://github.com/vllm-project/vllm/issues/56790)). An attention buffer sized for
-128 tokens that writes out of bounds above 64 concurrent requests. A kernel tile tuned for a
-40-compute-unit part and frozen in at compile time. A fast all-reduce switched off by architecture
-name on cards that pass the check it actually needs. Like the first, they shipped without a
-gfx1100 test runner in the loop to catch them. [Chapter 1.1](paper/01a-what-the-image-costs.md),
-[Chapter 1.2](paper/01b-what-the-defaults-cost.md),
-[Chapter 2.1](paper/02a-does-faster-change-what-it-says.md)
+- **Four defaults cost 4.5× at long context, and none of them warn you.** [Chapter 1.2](paper/01b-what-the-defaults-cost.md)
+- **A setting can reverse with the number of cards.** The faster all-reduce at four cards is the slower one at eight. [Chapter 1.3](paper/01c-what-the-rest-of-the-stack-costs.md)
+- **A server can report healthy while talking nonsense.** A stale compiled graph scored a perplexity of 1.8 million. [Chapter 2.1](paper/02a-does-faster-change-what-it-says.md)
+- **The container image is the largest single variable.** Two AMD images five days apart differ by up to 53 % at 16K. [Chapter 1.1](paper/01a-what-the-image-costs.md)
+- **Fewer cards per model beats more, for throughput.** Ten cards serve a 357B model at 23.3 tok/s. [Chapter 1](paper/01-throughput-and-power.md)
+- **Model size does not predict output quality**, and carefully scoped 4-bit costs nothing measurable. [Chapter 2](paper/02-output-quality.md)
 
 ## Chapters
 
@@ -69,58 +53,54 @@ gfx1100 test runner in the loop to catch them. [Chapter 1.1](paper/01a-what-the-
 | [1: Throughput and power](paper/01-throughput-and-power.md) | What ten consumer AMD cards deliver, what they draw doing it, and where the platform stops |
 | [1.1: What the image costs](paper/01a-what-the-image-costs.md) | The software stack is not a constant. Two images, four configurations, up to 53 % apart at long context |
 | [1.2: What the defaults cost](paper/01b-what-the-defaults-cost.md) | Seven knobs, each with both directions. 4.59 to 40.7 tok/s at 60K on the same hardware |
+| [1.3: What the rest of the stack costs](paper/01c-what-the-rest-of-the-stack-costs.md) | Three more knobs, a profile of every kernel in a token, and a check against real work. 41.4 to 76.4 tok/s at 60K |
 | [2: Output quality](paper/02-output-quality.md) | Six models against a frozen rubric. Size did not predict quality, and quantization cost nothing |
 | [2.1: Does faster change what it says?](paper/02a-does-faster-change-what-it-says.md) | Five checks for any speed change, the bug a single request could not see, and the honest cost of the fastest kernel |
+| [2.2: The speed without the cost](paper/02b-the-speed-without-the-cost.md) | The fixed kernel, a correction to how 2.1 priced the cost, and a kernel that is wrong in every element |
 
 ## Tools
 
-Everything used to produce the numbers is here, so the numbers can be checked.
-
-| Tool | What it does |
+| Folder | What is in it |
 | --- | --- |
-| [`bench/n02-bench`](bench/n02-bench) | Throughput harness. Exact prompt lengths verified against the server's tokenizer, pinned output length, discarded warm-up, median of three, decode measured separately from prefill |
-| [`tools/`](tools/) | The decode benchmark and quality gate behind Chapters 1.2 and 2.1: speed at 2K, 16K and 60K, reference recording, text comparison, fixed-text scoring, the kernel patch builder and the test-container launcher |
-| [`tools/kernel/`](tools/kernel/) | Isolated kernel measurements, each with a correctness gate and a broken control it has to reject |
-| [`tasks/task-01-sysfs-collector.md`](tasks/task-01-sysfs-collector.md) | The frozen evaluation rubric. Ten binary traps, all mechanically checkable, all derived from defects hit during a real build |
-| [`tasks/scores.jsonl`](tasks/scores.jsonl) | Every score, one row per model per run, with configuration and caveats attached |
-| [`bench/`](bench/) | Raw JSONL output behind every figure in the chapters |
+| [`patches/`](patches/) | Everything that turns the stock image into the configuration in Chapters 1.3 and 2.2: diffs, the fixed kernel, a Containerfile and launcher, all hashed |
+| [`tools/`](tools/) | Every script behind every figure, each gate with a broken control it has to reject |
+| [`bench/`](bench/) | Raw output behind every figure, including `n02-bench`, the throughput harness |
+| [`tasks/`](tasks/) | The frozen evaluation rubric and every score |
 
 ## The machine
 
 | Component | Specification |
 | --- | --- |
 | GPUs | 10× RX 7900 XTX, gfx1100, 240 GB aggregate VRAM, four manufacturers, bought secondhand |
-| CPU | EPYC 7663, 56 core Milan |
-| Board | ASRock Rack ROMED8-2T/BCM |
+| CPU and board | EPYC 7663 (56-core Milan) on an ASRock Rack ROMED8-2T/BCM |
 | Memory | 512 GB DDR4-3200 ECC, 8 channels |
 | Interconnect | PCIe Gen4 x8 to every card, through one PEX880xx Gen4 switch. No fabric |
-| Power | Multiple supplies on a 20 A 240 V dedicated circuit |
-| Cooling | Open bench, garage |
+| Power and cooling | Multiple supplies on a 20 A 240 V circuit, open bench, garage |
+| The agent's model | `cyankiwi/Qwen3.8-27B-AWQ-INT4`, revision `6e134bae` |
 
-Every measurement in this repository names the container image it was taken on. Given the finding
-in Chapter 1.1, a throughput number without an image tag is not a measurement.
+Every measurement names the container image it was taken on. After Chapter 1.1, a throughput number
+without an image tag is not a measurement.
 
-## Coming
+## Left open
 
-**The native kernel without its cost.** A version that adds its partial results in 32 bits, which
-should keep most of Chapter 1.2's speed and remove Chapter 2.1's precision cost. It already has its
-test: one digit that production is 99 % sure of.
+Measured far enough that anyone can pick them up:
 
-**The last 10 ms.** About 10 ms of every token still have no measured owner: the 48 linear-attention
-layers, the norms, and 128 all-reduces. An open pull request adds a fast all-reduce for RDNA3
-(vLLM #57767), and it gets tested here next.
-
-**A harder task.** Task 01 establishes a floor and cannot rank above it. The next one needs traps
-that separate rather than gate.
-
-**Tool access.** Every defect recorded in Chapter 2 was discoverable by one shell command. If defect
-counts collapse when the model can run commands, the gap is grounding rather than capability.
+- **An eight-card all-reduce** for RDNA3, now the largest cost in a token.
+- **One kernel per multiply.** The fixed kernel's separate reduction pass costs 255 launches per token.
+- **Precision on neutral text**, replacing the figure Chapter 2.2 withdrew.
+- **A harder evaluation task**, with tool access, that separates models above the floor Task 01 sets.
 
 ## Corrections
 
-Wanted, particularly on anything here that is wrong. Several claims in earlier drafts were withdrawn
-after being disproved by the machine itself, and those withdrawals are recorded in the chapters
-rather than deleted.
+Wanted, particularly on anything here that is wrong. Withdrawals are recorded in place, never deleted:
+
+| Where | What was wrong | Settled in |
+| --- | --- | --- |
+| Chapter 1.2, Knob 6 | The tree all-reduce was measured at four cards; at eight it is 3.2 ms per token slower | Chapter 1.3 |
+| Chapter 1.2, the short version | A 0.2 s first word that the chapter's own Knob 1 measured as 0.51 s | Chapter 1.2, in place |
+| Chapter 1.2, knobs that did not work | Speculative decoding: slower at four cards with the Triton kernel, 35 % faster at eight with the fixed kernel | Chapter 1.3 |
+| Chapter 2.1, Finding 4 | The 0.2 % perplexity cost was measured on production's own text, which favours production | Chapter 2.2 |
+| This README's earlier headline | 40.7 tok/s carried the precision cost of Chapter 2.1 without saying so | Chapter 2.2 |
 
 Open an issue.
 

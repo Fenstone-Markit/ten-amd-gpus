@@ -7,7 +7,7 @@
 Almost everything published about running large language models locally
 assumes one of two things: a single graphics card, or a datacenter. This paper
 describes the space between. Ten consumer gaming GPUs, 240 GB of combined
-memory, on one machine, in a garage. It works, and better than we expected.
+memory, on one machine, in a garage. It works, and better than I expected.
 
 ## Findings
 
@@ -48,22 +48,22 @@ starting with what the results do not establish.
 This paper reports throughput, latency, memory, thermal and power measurements
 on one machine. Readers should be clear about what it does not establish.
 
-**We did not measure output quality.** Every figure here is a rate. Whether
+**I did not measure output quality.** Every figure here is a rate. Whether
 any configuration degraded correctness relative to a bf16 baseline is
-untested in this chapter. This is the most significant limitation and we state
+untested in this chapter. This is the most significant limitation and I state
 it first. Chapter 2 addresses it directly.
 
-**We did not measure production or agentic workloads.** All benchmarks use
+**I did not measure production or agentic workloads.** All benchmarks use
 fixed-length synthetic prompts. Real work has growing context and tool-call
-latency. Our figures should not be read as predictions of it.
+latency. My figures should not be read as predictions of it.
 
 **Single machine, single operator.** No replication across hardware. Where a
-finding could be confirmed against public sources we say so. Where it could
-not, we say that too.
+finding could be confirmed against public sources I say so. Where it could
+not, I say that too.
 
 **Vendor-heterogeneous fleet.** Ten cards from four manufacturers, with three
 firmware revisions among one vendor's five. This is representative of what a
-secondhand-constrained buyer actually assembles. It introduces variance we
+secondhand-constrained buyer actually assembles. It introduces variance I
 have characterised but not eliminated.
 
 ## 2. Platform
@@ -106,7 +106,7 @@ Device-to-device and host-to-device agree within 1 %. The constraint is the
 lane, not the peer path. RCCL debug output confirms peer-to-peer transport is
 active.
 
-We identified the discrepancy by arithmetic before topology. 41 % is not a
+I identified the discrepancy by arithmetic before topology. 41 % is not a
 plausible efficiency for a well-formed ×16 link. 83 % is unremarkable for ×8.
 
 ### 3.2 Collective bandwidth
@@ -120,7 +120,7 @@ Ring all-reduce, 256 MB payload, 20 iterations:
 | 8 | 5.07 | 39 % |
 
 `NCCL_MIN_NCHANNELS` at 2, 8 and 16 produced 8.32, 8.47 and 8.48 GB/s.
-Channel count is not the limiting factor. We report the negative result to
+Channel count is not the limiting factor. I report the negative result to
 save someone else the experiment.
 
 vLLM's optimised custom all-reduce is disabled by the platform, not by
@@ -133,7 +133,7 @@ collectives run through RCCL. An open pull request adds an RDNA3 path
 
 Idle cards report Gen1 ×1 on every root port while the fleet moves 13 GB/s.
 That is fifty times what the reading permits. Wake the devices before taking
-any link or thermal measurement. We built a finding on this artifact before
+any link or thermal measurement. I built a finding on this artifact before
 catching it.
 
 ## 4. Weight formats
@@ -178,7 +178,7 @@ That framing matters because it implies a fixable path.
 **Method contribution.** vLLM's backend selector logs each rejection at debug
 level, but those lines do not reach the log. Forcing a specific backend
 converts a silent "no backend supports this" into a specific rejection with a
-stated reason. We recommend the technique generally.
+stated reason. I recommend the technique generally.
 
 ### 4.2 Block quantization constrains parallelism
 
@@ -263,7 +263,7 @@ concurrency was the cache draining. KV cache peaked at 23.3 % with no requests
 queued.
 
 **Any published benchmark should disable prefix caching or report hit rate.**
-We nearly published the artifact as a hardware finding.
+I nearly published the artifact as a hardware finding.
 
 ### 5.3 Dense scaling
 
@@ -290,13 +290,13 @@ Qwen2.5-72B, 8-way:
 ### 5.4 A prediction that held
 
 From measured ring latency and approximately 80 all-reduce operations per
-token at eight ranks, we predicted a communication-bound ceiling near 30 tok/s
+token at eight ranks, I predicted a communication-bound ceiling near 30 tok/s
 before running the benchmark. Measured: 28.9 on the synthetic harness, 30.9 on
 the chat harness.
 
 The same prediction **failed** on a 28-layer 7 B model, where 4-way tensor
 parallel was faster single-stream than 2-way, 107.4 against 77.6 tok/s,
-because the collective is too cheap to bind at that depth. We report the
+because the collective is too cheap to bind at that depth. I report the
 failure because it establishes where the model applies.
 
 ### 5.5 Fewer cards per model, more models
@@ -323,7 +323,7 @@ Five servers reached 4.77× a single server, which is 95 % of linear, with a
 
 **On this interconnect, tensor parallelism costs roughly 40 % of per-card
 throughput at these model sizes, while additional independent servers cost
-almost nothing.** We attributed this to ×8 root ports and RCCL-only
+almost nothing.** I attributed this to ×8 root ports and RCCL-only
 collectives. Chapter 1.2 found a second contributor: at the smaller per-card
 matrix shapes that high tensor parallelism produces, the quantized matrix
 kernels run far below memory bandwidth, so each card's work shrinks much less
@@ -366,15 +366,15 @@ Throughput is unchanged. The useful fraction of it is not. On one
 representative prompt: 1,859 tokens in 20.6 s with reasoning, 762 tokens in
 7.7 s without, equivalent answers.
 
-Every standard benchmarking tool reports the 48 ms figure. We suggest
+Every standard benchmarking tool reports the 48 ms figure. I suggest
 instrumenting both, and report both throughout.
 
 **Implementation note.** vLLM's reasoning stream field is named `reasoning`,
 not `reasoning_content`. Reading the wrong field counts only visible tokens
 while the clock runs through the trace, producing figures that are inverted
-rather than merely inaccurate. We made this error and discarded a run.
+rather than merely inaccurate. I made this error and discarded a run.
 
-## 6. The largest model we served
+## 6. The largest model I served
 
 GLM-4.6-AWQ: 357 B parameters, 160 experts, 176 GB of weights.
 
@@ -406,7 +406,7 @@ Placed in context:
 | **GLM-4.6** | **357 B** | **23.3** | **1,743** |
 
 A 357 B model runs 25 % slower than a 72 B on less power, because sparse
-activation and INT4-on-MoE compound favourably. We measured both effects
+activation and INT4-on-MoE compound favourably. I measured both effects
 independently before attempting this configuration.
 
 **This is the ceiling of the platform, not a recommended operating point.**
@@ -422,7 +422,7 @@ Peak measured draw: 3,108 W under matrix multiplication, ten cards. Idle:
 
 On the prior 15 A / 110 V circuit, four cards drew approximately 1,330 W
 against a roughly 1,320 W continuous rating. **At consumer scale the circuit,
-not the power supply, is the binding constraint**, and we found no build guide
+not the power supply, is the binding constraint**, and I found no build guide
 that mentions it.
 
 ### 7.2 Thermal
@@ -451,7 +451,7 @@ setting.
 Slot position was eliminated. A known-good card ran cooler in the suspect
 slot. Power was eliminated. It drew 253 W against a 300 W cap.
 
-We record the signature because it is diagnostic and we could not find it
+I record the signature because it is diagnostic and I could not find it
 documented.
 
 ### 7.3 A container limit that caps you at two servers
@@ -463,7 +463,7 @@ approximately 1,726. A third fails with:
 libgomp: Thread creation failed: Resource temporarily unavailable
 ```
 
-This presents as a GPU or network fault and is neither. We eliminated port
+This presents as a GPU or network fault and is neither. I eliminated port
 collision and ulimit hypotheses before identifying it.
 
 Resolution: `--pids-limit=-1` on the container and `OMP_NUM_THREADS=8` per
@@ -492,8 +492,8 @@ Before the gaps, the capability, because the capability is the larger fact and
 it is easy to lose under a list of workarounds.
 
 **Ten consumer cards from four manufacturers, with three firmware revisions
-among one vendor's five, cooperate without incident.** We did not curate a
-matched set. We bought what was available at prices we could pay, and the
+among one vendor's five, cooperate without incident.** I did not curate a
+matched set. I bought what was available at prices I could pay, and the
 fleet works.
 
 **The interconnect performs to specification.** 13.04 GB/s device-to-device
@@ -501,7 +501,7 @@ against a 15.75 GB/s theoretical ceiling is 83 % efficiency on a Gen4 ×8 link,
 and device-to-device matched host-to-device within 1 %. Nothing is quietly
 broken underneath.
 
-**The hardware is predictable.** We derived an expected throughput ceiling
+**The hardware is predictable.** I derived an expected throughput ceiling
 from measured collective latency, before running the benchmark, and the
 serving result landed within 4 %. A platform whose behaviour can be predicted
 from first principles is a platform you can engineer on.
@@ -518,7 +518,7 @@ reach 404. These are not consolation numbers.
 
 **And 176 GB of weights fit.** A 357 B model, in a garage, on gaming cards
 bought secondhand across a market with no enterprise supply. That was not an
-obvious outcome when we started and it is the reason this paper exists.
+obvious outcome when I started and it is the reason this paper exists.
 
 ### 8.2 On deployment form factor
 
@@ -527,7 +527,7 @@ the smaller ones. A 36 B mixture-of-experts on four cards at 84 tok/s and
 821 W is a working tool. A 357 B model on ten cards at 23 tok/s and 1,743 W
 demonstrates a ceiling.
 
-We built the larger machine to establish where that ceiling is. We would not
+I built the larger machine to establish where that ceiling is. I would not
 recommend it as a deployment. The trajectory that matters for local inference
 is toward compact, low-power systems capable of what this arrangement does
 today, and the gap between those two things is a statement about 2026 rather
@@ -535,7 +535,7 @@ than about architecture.
 
 ### 8.3 On AMD, and what would help
 
-We want to be direct about our position, because a list of workarounds can
+I want to be direct about my position, because a list of workarounds can
 read as a complaint and this is not one.
 
 **The RX 7900 XTX is a good card and it earned its place here.** 24 GB per
@@ -545,31 +545,31 @@ across every measurement in this paper the silicon did what the specification
 says it does. When something failed, it was never the card.
 
 **RDNA3 consumer parts are officially supported.** ROCm 7.2 lists the RX 7900
-XTX (gfx1100) among supported consumer GPUs alongside RDNA4 [R2]. We say that
-plainly because our findings could be misread as evidence of abandonment, and
+XTX (gfx1100) among supported consumer GPUs alongside RDNA4 [R2]. I say that
+plainly because my findings could be misread as evidence of abandonment, and
 they are not that.
 
-The gap we measured is narrower and more specific. As one public assessment
+The gap I measured is narrower and more specific. As one public assessment
 puts it, official support on the consumer side is not the same as tested,
 optimised and production-ready. Most framework authors test on MI-series
 datacenter cards, and consumer RDNA support is real but secondary [R3].
 
-That matches our experience precisely. Everything we could not do traces to
+That matches my experience precisely. Everything I could not do traces to
 kernel coverage rather than to hardware:
 
 - **AITER is scoped to CDNA** and imported eagerly across framework code, so
   consumer systems fall back or fail to load [R1]. This is the direct cause of
-  our FP8 mixture-of-experts result.
+  my FP8 mixture-of-experts result.
 - **No RDNA continuous-integration runner exists** in at least one major
   serving framework. AMD CI targets MI-series, without regression coverage
   for consumer architectures [R1]. Support that is not tested regresses
-  silently, and we observed that pattern.
-- **No tuned kernel configuration ships for this device.** vLLM told us
+  silently, and I observed that pattern.
+- **No tuned kernel configuration ships for this device.** vLLM told me
   explicitly that no tuning file exists for the RX 7900 XTX and that it was
-  running defaults. Whatever performance we measured, it was not the tuned
+  running defaults. Whatever performance I measured, it was not the tuned
   path.
 - **Fallbacks are taken silently.** ROCm's optimised paged-attention kernel
-  declined our configuration and fell back to a portable implementation. It
+  declined my configuration and fell back to a portable implementation. It
   worked correctly. Nothing in a benchmark result would tell you it happened.
 - **A native kernel that ships and is not used.** The image contains an RDNA3
   quantized matrix kernel written for this exact GPU. vLLM skips it for
@@ -578,7 +578,7 @@ kernel coverage rather than to hardware:
   (Chapter 1.2).
 
 Read together, these say something encouraging. **The numbers in this paper
-are a floor, not a ceiling.** We measured untuned kernels on fallback paths
+are a floor, not a ceiling.** I measured untuned kernels on fallback paths
 and still served a 357 B model. The headroom that exists is in software that
 already runs, and it belongs to whoever writes the configurations.
 
@@ -588,8 +588,8 @@ Three things would change the picture materially, in ascending cost:
    tested does not regress silently, and this is the cheapest durable fix on
    the list.
 2. **Published tuned kernel configurations** for common gfx1100 shapes, or a
-   documented path for users to generate and contribute their own. We would
-   contribute ours.
+   documented path for users to generate and contribute their own. I would
+   contribute mine.
 3. **A portable fallback for AITER-gated paths**, so consumer architectures
    degrade in performance rather than failing to load. Slow is a result. Not
    loading is not.
@@ -599,8 +599,8 @@ hardware already in users' hands, and the people running it are exactly the
 population that produces the community knowledge, the bug reports and the
 tutorials that a platform needs.
 
-We built this because we thought the hardware deserved it. The measurements
-say we were right. We would like to keep going.
+I built this because I thought the hardware deserved it. The measurements
+say I was right. I would like to keep going.
 
 ## 9. Recommendations for practitioners
 
