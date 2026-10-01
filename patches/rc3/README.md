@@ -8,6 +8,9 @@ built from the sources here (section e). Every number below is taken from the
 release manifests, the results files, or the task folders' Results; the source
 is named beside it. Nothing is from memory. Written by Itko (the agent) from the
 frozen release; audited before publication, with five corrections.
+Cited paths are relative to the repository root: bench/rc3/ holds the release
+manifests, the all-reduce results, the real-work sampler logs, the text-check
+references, and Itko's task write-ups (itko-*.md).
 
 The model is Qwen3.8-27B AWQ INT4, tensor-parallel 8, one request, exact
 token rate (tokens counted per streamed chunk).
@@ -21,10 +24,10 @@ token rate (tokens counted per streamed chunk).
 | rc3b (2026-10-01) | tuned fixed-order fp32 kernel as the op library | 113.3 | 110.4 | gate_tune, gate_cover (one exception), fp32_op_gate_tuned |
 | rc3c (2026-10-01) | 4-token 3D attention path, served with 3 draft tokens | 157.0 | 161.7 | 108/108 correctness gate |
 
-Sources: rc2 80.4/76.4 from inputs/results/MANIFEST-rc2.md. rc3a 108.2/106.1 from
-inputs/results/MANIFEST-rc3a.md (test window; that manifest's own rc2 baseline is
-81.0/77.1). rc3b 113.3/110.4 from inputs/results/MANIFEST-rc3b.md (test window
-2026-10-01 10:17-10:26). rc3c 157.0/161.7 for 3 draft tokens from inputs/results/MANIFEST.md
+Sources: rc2 80.4/76.4 from bench/rc3/MANIFEST-rc2.md. rc3a 108.2/106.1 from
+bench/rc3/MANIFEST-rc3a.md (test window; that manifest's own rc2 baseline is
+81.0/77.1). rc3b 113.3/110.4 from bench/rc3/MANIFEST-rc3b.md (test window
+2026-10-01 10:17-10:26). rc3c 157.0/161.7 for 3 draft tokens from bench/rc3/MANIFEST-rc3c.md
 (test window 2026-10-01); rc3c with 1 and 2 draft tokens is 112.0/107.5 and
 141.6/137.2 in the same file.
 
@@ -59,10 +62,10 @@ Why decode-sized messages only.
   prefill (thousands of tokens) is not. (8,192 is the kernel's maximum hidden
   size, not this model's.)
 
-Exactness and timing against RCCL, 8 cards (results/rdna_ar_test_w8.json):
+Exactness and timing against RCCL, 8 cards (bench/rc3/rdna_ar_test_w8.json):
 exact integer sums, every rank bit-identical, RMS error 0.0031 against
 RCCL's 0.0037. Per call, 17.7 us at 2 tokens against RCCL's 67.8, and 17.9
-against 40.2 at 1 token (inputs/results/MANIFEST-rc3a.md; raw rows in the
+against 40.2 at 1 token (bench/rc3/MANIFEST-rc3a.md; raw rows in the
 JSON: 1 token 17.938/40.164 us, 2 tokens 17.674/67.778 us). At 4, 8, 16 and 24
 tokens the RDNA kernel is 23.2/33.6/51.5/64.0 us against RCCL's
 69.1/58.1/66.3/78.9 us.
@@ -103,7 +106,7 @@ equals the thread count) and the per-M tile height for M >= 8.
 
 Slice size per shape (TK), bf16 path only (fp16 stays at 256):
 
-M = 1..7 (fp32-tune/README.md Results, from a 12-config sweep on G7):
+M = 1..7 (bench/rc3/itko-fp32-tune-README.md Results, from a 12-config sweep on G7):
 | Shape (K, N) | calls/token | TK at M=1 | TK at M=2 | TK at M=4 |
 | --- | --- | --- | --- | --- |
 | qkv (5120, 2048) | 16 | 128 | 128 | 128 |
@@ -128,7 +131,7 @@ the code dispatches TK=256 at M=15 (the code's `size_m <= 8 ? 128 : 256` gives
 
 Results per batch size (ms per token over the 255 quantized GEMM calls, median
 of 3 shuffled runs, graphed, >=401 MB distinct weight copies; source
-fp32-cover/README.md Results, gate_cover.py FULL mode). cand = tuned kernel,
+bench/rc3/itko-fp32-cover-README.md Results, gate_cover.py FULL mode). cand = tuned kernel,
 det_ref = the rc2 fixed-order kernel it replaces:
 
 | M | cand | det_ref | triton |
@@ -148,7 +151,7 @@ library md5 7cfa693d) and prints "ALL OP GATES PASS" (B, D, X, F, C, G), with
 decode precision at the bf16 rounding floor and M=1 bit-identical across calls.
 
 The 8-row bug the coverage task found. The kernel as it first passed gate_tune
-failed gate_cover at M = 8, 12 and 15. Root cause (fp32-cover/README.md
+failed gate_cover at M = 8, 12 and 15. Root cause (bench/rc3/itko-fp32-cover-README.md
 Results): the M_COUNT=8 dispatch branch (size_m > 7) hardcoded TK=256 and
 ignored the tk argument, so pick_tk()'s per-shape choice was never applied at
 M = 8, 12 or 15. The fix (per-shape / per-M dispatch only) moved M = 8 from
@@ -160,12 +163,12 @@ triton-minus-8.0 ms margin at M = 15: cand 11.20, needed <= 10.37. It passes
 the other S sub-rule at M = 15 (1.02 x det_ref = 1.02 x 11.80 = 12.04, and
 11.20 <= 12.04). At M = 15 the brain's comparison is det_ref, which this kernel
 beats, so the failure is accepted by the operator as a documented exception to
-be judged separately (fp32-cover/README.md Results; MANIFEST-rc3b.md).
+be judged separately (bench/rc3/itko-fp32-cover-README.md Results; bench/rc3/MANIFEST-rc3b.md).
 
 ## d. The 4-token 3D attention path (rc3c)
 
 The change is two lines. The 2-token limit lived in exactly two places
-(attn-4token/README.md Results); everything else in the 3D path is already
+(patches/rc3/attn4/itko-attn-4token-README.md Results); everything else in the 3D path is already
 token-count general.
 1. `triton_unified_attention.py:929` dispatch gate: `or max_seqlen_q > 2`
    changed to `or max_seqlen_q > 4`.
@@ -178,7 +181,7 @@ The patches are `attn4/triton_unified_attention.patch` and
 `attn4/triton_unified_attention.py` and `attn4/triton_attn.py` (what the
 Containerfile COPYs into the image).
 
-The 108-case gate (attn-4token/README.md Results, G7, nq=3 nkv=1 hs=256, the
+The 108-case gate (patches/rc3/attn4/itko-attn-4token-README.md Results, G7, nq=3 nkv=1 hs=256, the
 27B per-card shape; reference is the 2D path of the same wrapper). Tolerance
 max_abs <= 0.02 AND max_rel (|ref| >= 0.01) <= 0.05. All 108 cases PASS, all on
 the 3D path (confirmed via a grid spy on the kernel launch), max_abs in
@@ -186,7 +189,7 @@ the 3D path (confirmed via a grid spy on the kernel launch), max_abs in
 nq in {3,4} x ctx in {1024,16384,60000} x seqs in {1,2,4,8} x ntok in {1,2,3,4},
 plus the max-batch cases and the boundary ntok=3 at 60k. A deliberately broken
 reduce control fails (max_abs 0.0732, max_rel 4.13), proving the harness
-detects a bug. MANIFEST.md and Containerfile.rc3c both record 108 of 108.
+detects a bug. bench/rc3/MANIFEST-rc3c.md and Containerfile.rc3c both record 108 of 108.
 
 The largest-batch test (the 27b-crash lesson). CUDA graph capture runs the
 largest batch the 3D path accepts. The max-batch case is S=128 with ntok=4
@@ -200,9 +203,9 @@ hipErrorIllegalAddress and ctx=16384 hangs. The old buffer first-dim 256 is
 less than the 512 the 4-token launch needs.
 
 Why it matters. Before the fix, 3 draft tokens on rc3b gave 46.4 tok/s at 16K
-and 15.9 at 60K (results/ref_rc3b-k3-A.json is that run's text; MANIFEST.md),
+and 15.9 at 60K (bench/rc3/ref_rc3b-k3-A.json is that run's text; bench/rc3/MANIFEST-rc3c.md),
 because the 4-token verify fell back to the 2D attention path. With the fix,
-3 draft tokens give 157.0/161.7 in the test window (MANIFEST.md).
+3 draft tokens give 157.0/161.7 in the test window (bench/rc3/MANIFEST-rc3c.md).
 
 ## e. Building rc3a, rc3b, rc3c in order
 
@@ -229,7 +232,7 @@ Then test it on eight cards with allreduce/rdna_ar_test8.py (exact sums, every
 rank bit-identical, error against RCCL), and build the image:
     podman build -t localhost/n02-brain:rc3a -f allreduce/Containerfile.rc3a <rc3a context>
 Verify each file by hash inside the image (md5, matching the frozen
-MANIFEST-rc3a.md):
+bench/rc3/MANIFEST-rc3a.md):
     podman run --rm --entrypoint sh localhost/n02-brain:rc3a -c \
       "md5sum /opt/fenstone/rdna_ar8.so /opt/python/lib/python3.14/site-packages/vllm/distributed/device_communicators/rdna_custom_all_reduce.py /opt/python/lib/python3.14/site-packages/vllm/distributed/device_communicators/cuda_communicator.py"
 Expected: rdna_custom_all_reduce.py 0b06c90ad213c51386f7548e72ce5e6e,
@@ -245,7 +248,7 @@ tuned/fp32_op_gate_tuned.py step B does: disable the WMMA branch
 fen_fp32_entry), and append the _fenstone_C::gptq_gemm_rdna3_fp32 glue (the op
 with the FENSTONE_FP32_PREFILL switch). That produces the op the brain runs.
     podman build -t localhost/n02-brain:rc3b -f tuned/Containerfile.rc3b <rc3b context>
-Verify by hash inside the image (md5, matching MANIFEST-rc3b.md):
+Verify by hash inside the image (md5, matching bench/rc3/MANIFEST-rc3b.md):
     podman run --rm --entrypoint sh localhost/n02-brain:rc3b -c \
       "md5sum /opt/fenstone/fen_fp32_op.so"
 The Node02 build was 7cfa693db0a3483b6cf82921b827225c; as with rdna_ar8.so, a
@@ -256,7 +259,7 @@ rc3a files are inherited and unchanged.
 Build rc3c (from rc3b). The Containerfile COPYs the two patched attention
 backends.
     podman build -t localhost/n02-brain:rc3c -f attn4/Containerfile.rc3c <rc3c context>
-Verify by hash inside the image (md5, matching MANIFEST.md):
+Verify by hash inside the image (md5, matching bench/rc3/MANIFEST-rc3c.md):
     podman run --rm --entrypoint sh localhost/n02-brain:rc3c -c \
       "md5sum /opt/python/lib/python3.14/site-packages/vllm/v1/attention/ops/triton_unified_attention.py /opt/python/lib/python3.14/site-packages/vllm/v1/attention/backends/triton_attn.py"
 Expected: triton_unified_attention.py c84f3ca9848b4fc7e590ca5d7900ec92,
@@ -271,7 +274,7 @@ tuned/rc3b-test.sh and attn4/rc3c-spec.sh.
 - Three draft tokens' text check shows more near-tie divergence than one or
   two drafts: against rc3b, 1 draft diverges on 6 of 12 prompts, 2 drafts on 5
   of 12, 3 drafts on 9 of 12; largest logprob difference 0.37, 0.32, 0.29 and
-  top-5 agreement 95.9, 95.6, 94.1 percent respectively (MANIFEST.md).
+  top-5 agreement 95.9, 95.6, 94.1 percent respectively (bench/rc3/MANIFEST-rc3c.md).
 - Concurrency is unmeasured: the manifests mark concurrent requests as not yet
   proven.
 - The INT8 cache and the all-reduce/norm fusion are not attempted.
@@ -308,10 +311,10 @@ contributors to the vLLM project".
 
 ## Files in this folder and hash verification
 
-20 files are copied from inputs/ (sources, patches, Containerfiles, tests,
+20 files are copied from the frozen rc3c release (sources, patches, Containerfiles, tests,
 gates, and the attn4 README), in three subfolders. SHA256SUMS lists them.
-Every copy was verified against inputs/ by md5 (20 of 20 identical) and, where
-present in the frozen release, cross-checked against inputs/results/MANIFEST.md
-(20 of 20 md5 match). Nothing from inputs/results/task01/ (evaluation material)
-is included. The two compiled .so files are not present in inputs/ and are not
+Every copy was verified against the frozen release by md5 (20 of 20 identical) and, where
+present in the frozen release, cross-checked against bench/rc3/MANIFEST-rc3c.md
+(20 of 20 md5 match). No Task 01 evaluation material
+is included. The two compiled .so files are not part of this folder and are not
 copied; they are built from the sources (section e).

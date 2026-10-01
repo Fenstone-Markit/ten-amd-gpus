@@ -1,5 +1,7 @@
 # Ten AMD Consumer GPUs as Inference Infrastructure
 
+> Update 2026-10-01: the RDNA3 all-reduce from vLLM #57767, untested here when this chapter was written, has since been tested and extended to eight cards. See [patches/rc3](../patches/rc3/README.md). The chapter below is as published.
+
 ### Chapter 1: Throughput, power and the limits of the platform
 
 *A love letter to AMD, and a frustrated one*

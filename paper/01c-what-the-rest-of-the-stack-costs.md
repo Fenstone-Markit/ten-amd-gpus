@@ -1,5 +1,7 @@
 # Chapter 1.3: What the rest of the stack costs
 
+> Update 2026-10-01: the eight-card all-reduce this chapter leaves open is now built, and decode at 60K reached 145 to 162 tok/s. The kernel fusion it says my agent was building was built and turned out slower at two rows and up, so it was not adopted. See [patches/rc3](../patches/rc3/README.md). The chapter below is as published.
+
 *Node02: ten RX 7900 XTX (gfx1100), EPYC 7663, vLLM 0.23.1.dev1 on ROCm 7.14.1, in a snapshot of the
 production container built from `rocm/vllm:rocm7.14.1_rdna_ubuntu24.04_py3.14_pytorch_2.11_vllm_0.23.0`.
 The model is Qwen3.8-27B AWQ INT4 at eight-way tensor parallel, the one my agent runs on. Speeds are

@@ -1,0 +1,43 @@
+{
+ "label": "fp32det-ring",
+ "port": 8000,
+ "time_utc": "2026-09-26T05:44:16Z",
+ "runs": [
+  {
+   "ctx": 2000,
+   "first_token_s": 0.6393594741821289,
+   "ms_per_token": 14.76197772555881,
+   "tokens": 64
+  },
+  {
+   "ctx": 2000,
+   "first_token_s": 0.03115224838256836,
+   "ms_per_token": 14.776229858398438,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 4.959892988204956,
+   "ms_per_token": 16.204871828593905,
+   "tokens": 64
+  },
+  {
+   "ctx": 16000,
+   "first_token_s": 0.06750798225402832,
+   "ms_per_token": 16.227230193122985,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 23.2354998588562,
+   "ms_per_token": 20.728213446480886,
+   "tokens": 64
+  },
+  {
+   "ctx": 60000,
+   "first_token_s": 0.17038488388061523,
+   "ms_per_token": 20.70867826068212,
+   "tokens": 64
+  }
+ ]
+}

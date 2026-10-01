@@ -1,0 +1,75 @@
+{
+  "world": 4,
+  "arch": "gfx1100",
+  "hidden": 5120,
+  "stride": 2097152,
+  "rows": [
+    {
+      "tokens": 1,
+      "bytes": 10240,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 1803,
+      "rms_err_rdna": 0.0025769935767842333,
+      "rms_err_rccl": 0.002630562519352723,
+      "rdna_us": 13.97091031074524,
+      "rccl_us": 34.06427025794983
+    },
+    {
+      "tokens": 2,
+      "bytes": 20480,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 3586,
+      "rms_err_rdna": 0.0025361681373063456,
+      "rms_err_rccl": 0.0026708142465834616,
+      "rdna_us": 12.37525999546051,
+      "rccl_us": 40.30618190765381
+    },
+    {
+      "tokens": 4,
+      "bytes": 40960,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 7117,
+      "rms_err_rdna": 0.0025423250856994152,
+      "rms_err_rccl": 0.0026766577950101938,
+      "rdna_us": 16.094890236854553,
+      "rccl_us": 39.58130955696106
+    },
+    {
+      "tokens": 8,
+      "bytes": 81920,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 14357,
+      "rms_err_rdna": 0.002555834501094152,
+      "rms_err_rccl": 0.00268410035917938,
+      "rdna_us": 22.07903027534485,
+      "rccl_us": 38.15669059753418
+    },
+    {
+      "tokens": 16,
+      "bytes": 163840,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 28679,
+      "rms_err_rdna": 0.002533419862414379,
+      "rms_err_rccl": 0.002668799657682003,
+      "rdna_us": 33.740949630737305,
+      "rccl_us": 45.417070388793945
+    },
+    {
+      "tokens": 24,
+      "bytes": 245760,
+      "exact": true,
+      "ranks_agree": true,
+      "mismatch_vs_rccl": 42972,
+      "rms_err_rdna": 0.002551982136841483,
+      "rms_err_rccl": 0.002677534249774174,
+      "rdna_us": 45.68882942199707,
+      "rccl_us": 53.82454872131348
+    }
+  ],
+  "note": "4 ranks, graph replays"
+}

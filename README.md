@@ -44,6 +44,7 @@ leaving it on the table.**
 
 - **Four defaults cost 4.5× at long context, and none of them warn you.** [Chapter 1.2](paper/01b-what-the-defaults-cost.md)
 - **A setting can reverse with the number of cards.** The faster all-reduce at four cards is the slower one at eight. [Chapter 1.3](paper/01c-what-the-rest-of-the-stack-costs.md)
+- **The collective was the largest cost, and replacing it was the largest single fix.** Extending an RDNA3 all-reduce to eight cards made each call 3.8× faster than RCCL and decode 39 % faster end to end. [rc3](patches/rc3/README.md)
 - **A server can report healthy while talking nonsense.** A stale compiled graph scored a perplexity of 1.8 million. [Chapter 2.1](paper/02a-does-faster-change-what-it-says.md)
 - **The container image is the largest single variable.** Two AMD images five days apart differ by up to 53 % at 16K. [Chapter 1.1](paper/01a-what-the-image-costs.md)
 - **Fewer cards per model beats more, for throughput.** Ten cards serve a 357B model at 23.3 tok/s. [Chapter 1](paper/01-throughput-and-power.md)
@@ -70,7 +71,7 @@ leaving it on the table.**
 | --- | --- |
 | [`patches/`](patches/) | Everything that turns the stock image into the configuration in Chapters 1.3 and 2.2, and [`patches/rc3/`](patches/rc3/) for the rest: diffs, kernels, Containerfiles, tests and gates, all hashed |
 | [`tools/`](tools/) | Every script behind every figure, each gate with a broken control it has to reject |
-| [`bench/`](bench/) | Raw output behind every figure, including `n02-bench`, the throughput harness |
+| [`bench/`](bench/) | Raw output behind every figure, including `n02-bench`, the throughput harness; [`bench/rc3/`](bench/rc3/) for the rc3 releases |
 | [`tasks/`](tasks/) | The frozen evaluation rubric and every score |
 
 ## The machine
@@ -106,7 +107,7 @@ Wanted, particularly on anything here that is wrong. Withdrawals are recorded in
 | --- | --- | --- |
 | Chapter 1.2, Knob 6 | The tree all-reduce was measured at four cards; at eight it is 3.2 ms per token slower | Chapter 1.3 |
 | Chapter 1.2, the short version | A 0.2 s first word that the chapter's own Knob 1 measured as 0.51 s | Chapter 1.2, in place |
-| Chapter 1.2, knobs that did not work | Speculative decoding: slower at four cards with the Triton kernel, 35 % faster at eight with the fixed kernel | Chapter 1.3 |
+| Chapter 1.2, knobs that did not work (and Chapter 2.1, which repeats it) | Speculative decoding: slower at four cards with the Triton kernel, 35 % faster at eight with the fixed kernel | Chapter 1.3 |
 | Chapter 2.1, Finding 4 | The 0.2 % perplexity cost was measured on production's own text, which favours production | Chapter 2.2 |
 | This README's earlier headline | 40.7 tok/s carried the precision cost of Chapter 2.1 without saying so | Chapter 2.2 |
 

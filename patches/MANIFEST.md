@@ -1,5 +1,7 @@
 # Manifest
 
+> Update 2026-10-01: patches/rc3/ is listed separately, in its own SHA256SUMS.
+
 md5 of every file in patches/, and of the stock and patched vLLM files the diffs connect.
 
 | vLLM file | Stock image | Patched (rc2) |

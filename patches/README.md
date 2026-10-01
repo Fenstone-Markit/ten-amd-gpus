@@ -1,5 +1,7 @@
 # Patches
 
+> Update 2026-10-01: the configuration now running is rc3, built on top of this one. See [rc3/](rc3/README.md).
+
 Everything that turns the stock image into the configuration measured in Chapters 1.3 and 2.2
 (release rc2 on this machine). Every file's hash is in [MANIFEST.md](MANIFEST.md).
 

@@ -1,0 +1,63 @@
+{
+  "world": 2,
+  "arch": "gfx1100",
+  "hidden": 5120,
+  "stride": 2097152,
+  "rows": [
+    {
+      "tokens": 1,
+      "bytes": 10240,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 10.364910364151001,
+      "rccl_us": 16.315770149230957
+    },
+    {
+      "tokens": 2,
+      "bytes": 20480,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 7.803699970245361,
+      "rccl_us": 23.112229108810425
+    },
+    {
+      "tokens": 4,
+      "bytes": 40960,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 10.618099570274353,
+      "rccl_us": 22.762649059295654
+    },
+    {
+      "tokens": 8,
+      "bytes": 81920,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 12.77055025100708,
+      "rccl_us": 24.47864055633545
+    },
+    {
+      "tokens": 16,
+      "bytes": 163840,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 19.248199462890625,
+      "rccl_us": 29.57113027572632
+    },
+    {
+      "tokens": 24,
+      "bytes": 245760,
+      "exact": true,
+      "mismatch_vs_rccl": 0,
+      "worst_steps_vs_rccl": 0.0,
+      "rdna_us": 25.443450212478638,
+      "rccl_us": 34.06352996826172
+    }
+  ],
+  "note": "2 ranks (G7, G9), graph replays; does not predict 8 ranks"
+}
