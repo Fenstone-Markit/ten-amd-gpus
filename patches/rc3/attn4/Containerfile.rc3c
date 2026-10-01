@@ -1,0 +1,6 @@
+# Containerfile.rc3c: rc3b plus the 4-token 3D attention path (Itko's attn-4token, commit b21b119, 108/108 PASS):
+# the dispatch gate allows up to 4 query tokens and the segment buffer holds 4 x seq_threshold_3D rows.
+FROM localhost/n02-brain:rc3b
+COPY triton_unified_attention.py /opt/python/lib/python3.14/site-packages/vllm/v1/attention/ops/triton_unified_attention.py
+COPY triton_attn.py /opt/python/lib/python3.14/site-packages/vllm/v1/attention/backends/triton_attn.py
+LABEL fenstone.release="rc3c" fenstone.base="localhost/n02-brain:rc3b"

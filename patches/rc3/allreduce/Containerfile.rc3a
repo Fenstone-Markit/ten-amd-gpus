@@ -1,0 +1,7 @@
+# Containerfile.rc3a: rc2 plus the 8-card RDNA3 all-reduce (vLLM PR #57767 plus a TP=8 butterfly).
+# Build context: ~/brain/pkg/rc3a. Switched on at run time with FENSTONE_RDNA_AR=1; without it, rc3a behaves as rc2.
+FROM localhost/n02-brain:rc2
+COPY rdna_ar8.so /opt/fenstone/rdna_ar8.so
+COPY rdna_custom_all_reduce.py /opt/python/lib/python3.14/site-packages/vllm/distributed/device_communicators/rdna_custom_all_reduce.py
+COPY cuda_communicator.py /opt/python/lib/python3.14/site-packages/vllm/distributed/device_communicators/cuda_communicator.py
+LABEL fenstone.release="rc3a" fenstone.base="localhost/n02-brain:rc2"

@@ -12,13 +12,15 @@ and published as it goes, including the parts that turned out to be wrong.
 
 | On one 27B model, the one my agent runs on | Where I started | Where it is now |
 | --- | --- | --- |
-| Decode at 60,000 tokens of context | 4.59 tok/s | **76.4 tok/s** |
-| Decode at 16,000 tokens | 11.5 tok/s | **80.4 tok/s** |
+| Decode at 60,000 tokens of context | 4.59 tok/s | **145 to 162 tok/s** |
+| Decode at 16,000 tokens | 11.5 tok/s | **150 to 165 tok/s** |
 | Wait for the first word in a long conversation | 26.6 s | **0.6 s** |
-| My agent's real work, from the server's own counters, on the build before the last knob | not measured | **68.0 tok/s** |
+| My agent's real work, from the server's own counters, at an average of 104,000 tokens of context | not measured | **134 tok/s** |
+| The frozen quality rubric (Task 01) | | **8 of 10, passed in 2 turns, the best on record** |
 
-Same cards, same model, same weights, with the quantized multiplies at the precision floor. **The
-silicon was never the limit. The tuning was.**
+Same cards, same model, same weights, with the quantized multiplies at the precision floor. The speed
+range is speculative decoding: the more predictable the text, the more of its three draft tokens are
+accepted per step. **The silicon was never the limit. The tuning was.**
 
 ## To AMD: what you are leaving on the table
 
@@ -29,12 +31,13 @@ Every row below is a software change, measured on this machine. Most are a few l
 | Accept asymmetric `uint4` in the RDNA3 W4A16 kernel's format list | 1.49 to 1.65× faster decode, from one missing list entry | [1.2](paper/01b-what-the-defaults-cost.md) |
 | Merge the fixed-order version of that kernel ([vLLM #54706](https://github.com/vllm-project/vllm/pull/54706)) | The same speed, at the precision floor, bit-for-bit repeatable | [2.2](paper/02b-the-speed-without-the-cost.md) |
 | Size long-context attention to the card instead of a fixed 16 segments | Attention at 60K from 7.2 to 1.6 ms per token | [1.3](paper/01c-what-the-rest-of-the-stack-costs.md) |
-| An eight-card RDNA3 all-reduce ([vLLM #57767](https://github.com/vllm-project/vllm/pull/57767) covers two and four) | All-reduce is now the largest single cost in a token | [1.3](paper/01c-what-the-rest-of-the-stack-costs.md) |
+| An eight-card RDNA3 all-reduce: I extended [vLLM #57767](https://github.com/vllm-project/vllm/pull/57767) from two and four cards to eight | 3.8× faster than RCCL at decode size, exact on every card; 38 % faster decode end to end | [rc3](patches/rc3/README.md) |
+| Let the long-context attention path verify four tokens at once, not two (two lines) | Three draft tokens become nearly free: decode at 60K goes from 110 tok/s to between 145 and 162 | [rc3](patches/rc3/README.md) |
 | Fix QuickReduce for consumer cards, or compile it out of their image | Today it returns a wrong value in every element on this card | [2.2](paper/02b-the-speed-without-the-cost.md) |
 | An RDNA3 continuous-integration runner | Every defect in this repository shipped without one | all |
 
-With the defaults and settings in Chapters 1.2 and 1.3, these took one model from 4.59 to 76.4 tok/s
-at long context, on cards people already own. **The RX 7900 XTX already has the silicon. The software is
+With the defaults and settings in Chapters 1.2 and 1.3 and the rc3 patches, these took one model from
+4.59 to about 160 tok/s at long context, on cards people already own. **The RX 7900 XTX already has the silicon. The software is
 leaving it on the table.**
 
 ## What else I found
@@ -45,6 +48,8 @@ leaving it on the table.**
 - **The container image is the largest single variable.** Two AMD images five days apart differ by up to 53 % at 16K. [Chapter 1.1](paper/01a-what-the-image-costs.md)
 - **Fewer cards per model beats more, for throughput.** Ten cards serve a 357B model at 23.3 tok/s. [Chapter 1](paper/01-throughput-and-power.md)
 - **Model size does not predict output quality**, and carefully scoped 4-bit costs nothing measurable. [Chapter 2](paper/02-output-quality.md)
+- **Draft tokens are nearly free once attention can verify several at once.** Each extra one costs about 0.7 ms per step. [rc3](patches/rc3/README.md)
+- **Speed did not cost quality.** After every change above, the agent's model scored 8 of 10 on the frozen rubric and fixed both defects from evidence alone. [tasks/](tasks/)
 
 ## Chapters
 
@@ -57,12 +62,13 @@ leaving it on the table.**
 | [2: Output quality](paper/02-output-quality.md) | Six models against a frozen rubric. Size did not predict quality, and quantization cost nothing |
 | [2.1: Does faster change what it says?](paper/02a-does-faster-change-what-it-says.md) | Five checks for any speed change, the bug a single request could not see, and the honest cost of the fastest kernel |
 | [2.2: The speed without the cost](paper/02b-the-speed-without-the-cost.md) | The fixed kernel, a correction to how 2.1 priced the cost, and a kernel that is wrong in every element |
+| [rc3: the all-reduce and the draft tokens](patches/rc3/README.md) | The eight-card all-reduce, a tuned kernel, and the attention change that made three draft tokens work. 76.4 to about 160 tok/s at 60K |
 
 ## Tools
 
 | Folder | What is in it |
 | --- | --- |
-| [`patches/`](patches/) | Everything that turns the stock image into the configuration in Chapters 1.3 and 2.2: diffs, the fixed kernel, a Containerfile and launcher, all hashed |
+| [`patches/`](patches/) | Everything that turns the stock image into the configuration in Chapters 1.3 and 2.2, and [`patches/rc3/`](patches/rc3/) for the rest: diffs, kernels, Containerfiles, tests and gates, all hashed |
 | [`tools/`](tools/) | Every script behind every figure, each gate with a broken control it has to reject |
 | [`bench/`](bench/) | Raw output behind every figure, including `n02-bench`, the throughput harness |
 | [`tasks/`](tasks/) | The frozen evaluation rubric and every score |
@@ -85,8 +91,10 @@ without an image tag is not a measurement.
 
 Measured far enough that anyone can pick them up:
 
-- **An eight-card all-reduce** for RDNA3, now the largest cost in a token.
-- **One kernel per multiply.** The fixed kernel's separate reduction pass costs 255 launches per token.
+- **Serving more than one user at once.** Every number here is one request at a time.
+- **Startup.** A warm restart takes about eight minutes, most of it re-timing kernels that were timed last time.
+- **The all-reduce fused with the norm**, and **an 8-bit conversation cache**: each worth single-digit percent, measured far enough to start.
+- **One kernel per multiply.** A fused version was correct but slower at two rows and up; the separate reduction pass stays.
 - **Precision on neutral text**, replacing the figure Chapter 2.2 withdrew.
 - **A harder evaluation task**, with tool access, that separates models above the floor Task 01 sets.
 
@@ -106,4 +114,6 @@ Open an issue.
 
 ## License
 
-MIT. Fenstone Markit is the trading name of SovereignAI Solutions Inc., Alberta, Canada.
+MIT, except files that carry their own license header. Files derived from vLLM keep their Apache-2.0
+headers; the license text is in [LICENSE-APACHE-2.0](LICENSE-APACHE-2.0). Fenstone Markit is the trading
+name of SovereignAI Solutions Inc., Alberta, Canada.

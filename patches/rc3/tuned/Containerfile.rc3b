@@ -1,0 +1,5 @@
+# Containerfile.rc3b: rc3a plus the tuned fixed-order op library (kernel md5 74f2b097, passed gate_tune.py,
+# gate_cover.py and fp32_op_gate_tuned.py; library md5 7cfa693db0a3483b6cf82921b827225c). Nothing else changes.
+FROM localhost/n02-brain:rc3a
+COPY fen_fp32_op.so /opt/fenstone/fen_fp32_op.so
+LABEL fenstone.release="rc3b" fenstone.base="localhost/n02-brain:rc3a"

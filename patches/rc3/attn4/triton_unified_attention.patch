@@ -1,0 +1,11 @@
+--- orig/triton_unified_attention.py	2026-10-01 17:31:43.808468196 +0000
++++ triton_unified_attention.py.patched	2026-10-01 17:31:48.740769855 +0000
+@@ -926,7 +926,7 @@
+         or softmax_segm_output is None
+         or softmax_segm_max is None
+         or softmax_segm_expsum is None
+-        or max_seqlen_q > 2
++        or max_seqlen_q > 4
+         or num_seqs > seq_threshold_3D
+         or is_batch_invariant
+     )
