@@ -1,0 +1,30 @@
+model-test.sh 2.0
+command: model-test.sh cyankiwi/Qwen3.8-27B-AWQ-INT4 brain:8 3
+ATTN=TRITON_ATTN MAXLEN=262144 (model maximum 262144) K=3
+ENVS=TRITON_CACHE_AUTOTUNING=1 TRITON_PRINT_AUTOTUNING=1
+ARGS=--compilation-config {"max_cudagraph_capture_size":64}
+repo cyankiwi/Qwen3.8-27B-AWQ-INT4, snapshot /models/hub/models--cyankiwi--Qwen3.8-27B-AWQ-INT4/snapshots/6e134bae811fb5adac50ee042ae5f029ac6779aa/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:8: TP8, torch indices 1,2,3,4,5,6,8,9
+compile cache /home/fenstonemarkit/brain/cache/test-qwen3-8-27b-awq-int4
+
+[11:05:35] stopping the brain service for this test
+[11:05:52] cyankiwi/Qwen3.8-27B-AWQ-INT4 on brain:8 (TP8, indices 1,2,3,4,5,6,8,9), drafts 3, attention TRITON_ATTN, window 262144, image localhost/n02-brain:rc3c
+[11:05:52] extra: env TRITON_CACHE_AUTOTUNING=1 TRITON_PRINT_AUTOTUNING=1 args --compilation-config {"max_cudagraph_capture_size":64}
+[11:06:42] loading... 60 s
+[11:07:42] loading... 120 s
+[11:08:43] loading... 180 s
+[11:09:43] loading... 240 s
+[11:10:43] loading... 300 s
+[11:11:44] loading... 360 s
+[11:12:44] loading... 420 s
+[11:13:44] loading... 480 s
+[11:14:44] loading... 540 s
+[11:15:45] loading... 600 s
+[11:16:45] loading... 660 s
+[11:17:45] loading... 720 s
+[11:18:45] loading... 780 s
+[11:19:16] up after 804 s
+[11:19:56] stopping and removing the test container
+[11:19:58] restarting the brain service
+[11:19:58] run folder: /home/fenstonemarkit/handtest/model-runs/qwen3-8-27b-awq-int4-20261002-110533

@@ -1,0 +1,8 @@
+[2026-10-02 09:51:41] node02:80:80 [0] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/init.cc:303 NCCL WARN Missing "iommu=pt" from kernel command line which can lead to system instablity or hang!
+[2026-10-02 09:51:43] node02:80:80 [0] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/misc/amdsmi_wrap.cc:214 NCCL WARN RCCL_USE_AMD_SMI_LIB not set, but HIP_FABRIC_API is defined. Fabric support is only available through AMD SMI. Rerun with RCCL_USE_AMD_SMI_LIB=1 to enable AMD SMI and UALoE fabric support.
+[2026-10-02 09:51:41] node02:81:81 [1] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/init.cc:303 NCCL WARN Missing "iommu=pt" from kernel command line which can lead to system instablity or hang!
+[2026-10-02 09:51:43] node02:81:81 [1] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/misc/amdsmi_wrap.cc:214 NCCL WARN RCCL_USE_AMD_SMI_LIB not set, but HIP_FABRIC_API is defined. Fabric support is only available through AMD SMI. Rerun with RCCL_USE_AMD_SMI_LIB=1 to enable AMD SMI and UALoE fabric support.
+ERROR 10-02 09:51:44 [multiproc_executor.py:888] RuntimeError: NCCL error: unhandled cuda error (run with NCCL_DEBUG=INFO for details)
+[2026-10-02 09:51:44] node02:81:179 [1] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/transport/p2p_tmp.cc:283 NCCL WARN hipIpcGetMemHandle failed : invalid argument
+[2026-10-02 09:51:44] node02:80:178 [0] /__w/rockrel/rockrel/build/comm-libs/rccl/build/hipify/src/transport/p2p_tmp.cc:283 NCCL WARN hipIpcGetMemHandle failed : invalid argument
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}

@@ -1,0 +1,5 @@
+ctx~ 16000 run 1: 64 tokens in 64 chunks (1.00 per chunk), first token  3.93s, decode  10.0 ms/token =  99.9 tok/s
+ctx~ 16000 run 2: 64 tokens in 64 chunks (1.00 per chunk), first token  0.15s, decode  10.0 ms/token = 100.0 tok/s
+ctx~ 60000 run 1: 64 tokens in 62 chunks (1.03 per chunk), first token 20.99s, decode  10.2 ms/token =  98.1 tok/s
+ctx~ 60000 run 2: 64 tokens in 62 chunks (1.03 per chunk), first token  0.82s, decode  10.2 ms/token =  98.0 tok/s
+realistic generation: 400 tokens, decode 104.3 tok/s (ordinary text, no forced length)

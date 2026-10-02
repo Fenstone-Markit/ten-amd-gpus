@@ -1,0 +1,9 @@
+INFO 10-02 07:49:41 [default_loader.py:397] Loading weights took 11.69 seconds
+INFO 10-02 07:49:42 [gpu_model_runner.py:5187] Model loading took 9.24 GiB memory and 13.082622 seconds
+INFO 10-02 07:50:02 [backends.py:393] Compiling a graph for compile range (1, 2048) takes 9.11 s
+INFO 10-02 07:50:11 [monitor.py:81] Initial profiling/warmup run took 3.19 s
+INFO 10-02 07:50:20 [gpu_worker.py:480] Available KV cache memory: 11.33 GiB
+INFO 10-02 07:50:20 [kv_cache_utils.py:1744] GPU KV cache size: 224,736 tokens
+INFO 10-02 07:51:32 [gpu_model_runner.py:6585] Graph capturing finished in 72 secs, took 1.80 GiB
+INFO 10-02 07:51:33 [core.py:306] init engine (profile, create kv cache, warmup model) took 110.98 s (compilation: 26.19 s)
+INFO:     Application startup complete.

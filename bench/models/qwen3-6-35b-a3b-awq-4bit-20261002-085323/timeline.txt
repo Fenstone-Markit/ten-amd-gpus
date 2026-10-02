@@ -1,0 +1,10 @@
+INFO 10-02 08:54:16 [rdna_custom_all_reduce.py:178] Enabled graph-only RDNA HIP all-reduce: gfx1100 TP4
+INFO 10-02 08:54:57 [default_loader.py:397] Loading weights took 31.18 seconds
+INFO 10-02 08:54:58 [gpu_model_runner.py:5187] Model loading took 5.86 GiB memory and 31.911025 seconds
+INFO 10-02 08:59:25 [backends.py:393] Compiling a graph for compile range (1, 2048) takes 255.69 s
+INFO 10-02 09:03:42 [monitor.py:81] Initial profiling/warmup run took 254.52 s
+INFO 10-02 09:03:50 [gpu_worker.py:480] Available KV cache memory: 13.36 GiB
+INFO 10-02 09:03:50 [kv_cache_utils.py:1744] GPU KV cache size: 1,341,060 tokens
+INFO 10-02 09:04:52 [gpu_model_runner.py:6585] Graph capturing finished in 62 secs, took 0.95 GiB
+INFO 10-02 09:04:53 [core.py:306] init engine (profile, create kv cache, warmup model) took 594.37 s (compilation: 265.91 s)
+INFO:     Application startup complete.

@@ -1,0 +1,17 @@
+model-test.sh 2.0
+command: model-test.sh Qwen/Qwen2.5-72B-Instruct-AWQ brain:8
+ATTN=TRITON_ATTN MAXLEN=32768 (model maximum 32768) K=0
+repo Qwen/Qwen2.5-72B-Instruct-AWQ, snapshot /models/hub/models--Qwen--Qwen2.5-72B-Instruct-AWQ/snapshots/698703eae6604af048a3d2f509995dc302088217/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:8: TP8, torch indices 1,2,3,4,5,6,8,9
+compile cache /home/fenstonemarkit/brain/cache/test-qwen2-5-72b-instruct-awq
+
+[09:22:07] stopping the brain service for this test
+[09:22:26] Qwen/Qwen2.5-72B-Instruct-AWQ on brain:8 (TP8, indices 1,2,3,4,5,6,8,9), drafts 0, attention TRITON_ATTN, window 32768, image localhost/n02-brain:rc3c
+[09:23:16] loading... 60 s
+[09:24:16] loading... 120 s
+[09:25:17] loading... 180 s
+[09:25:57] up after 211 s
+[09:26:18] stopping and removing the test container
+[09:26:19] restarting the brain service
+[09:26:19] run folder: /home/fenstonemarkit/handtest/model-runs/qwen2-5-72b-instruct-awq-20261002-092205

@@ -1,0 +1,13 @@
+RDNA all-reduce enabled on 4 rank(s) (want 4)
+compiled graph (the largest in the newest cache folder, i.e. the main model, not a draft head): /home/fenstonemarkit/brain/cache/test-qwen3-6-35b-a3b/torch_compile_cache/361414292e//rank_0_0/backbone/computation_graph.py
+fp32 op (ours) 0, installed 0, triton 0
+top operations:
+    160 torch.ops.vllm.all_reduce
+    110 torch.ops.vllm.rocm_unquantized_gemm
+     90 torch.ops.aten.sym_size
+     80 torch.ops.vllm_ir.fused_add_rms_norm
+     60 torch.ops.vllm.qwen_gdn_attention_core
+     40 torch.ops.vllm.moe_forward_shared
+     21 torch.ops.vllm_ir.rms_norm
+     20 torch.ops.vllm.unified_kv_cache_update
+     20 torch.ops.vllm.unified_attention_with_output

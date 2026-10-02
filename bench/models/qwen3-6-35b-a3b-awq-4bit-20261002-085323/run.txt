@@ -1,0 +1,25 @@
+model-test.sh 2.0
+command: model-test.sh cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit brain:4
+ATTN=TRITON_ATTN MAXLEN=81920 (model maximum 262144) K=0
+repo cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit, snapshot /models/hub/models--cyankiwi--Qwen3.6-35B-A3B-AWQ-4bit/snapshots/00fcea2d3bcf5389b518d4fc082e5590e0ba4844/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:4: TP4, torch indices 1,2,3,4
+compile cache /home/fenstonemarkit/brain/cache/test-qwen3-6-35b-a3b-awq-4bit
+
+[08:53:25] stopping the brain service for this test
+[08:53:43] cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit on brain:4 (TP4, indices 1,2,3,4), drafts 0, attention TRITON_ATTN, window 81920, image localhost/n02-brain:rc3c
+[08:54:33] loading... 60 s
+[08:55:34] loading... 120 s
+[08:56:34] loading... 180 s
+[08:57:34] loading... 240 s
+[08:58:34] loading... 300 s
+[08:59:35] loading... 360 s
+[09:00:35] loading... 420 s
+[09:01:35] loading... 480 s
+[09:02:36] loading... 540 s
+[09:03:36] loading... 600 s
+[09:04:36] loading... 660 s
+[09:05:16] up after 693 s
+[09:05:42] stopping and removing the test container
+[09:05:44] restarting the brain service
+[09:05:44] run folder: /home/fenstonemarkit/handtest/model-runs/qwen3-6-35b-a3b-awq-4bit-20261002-085323

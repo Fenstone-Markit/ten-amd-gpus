@@ -1,0 +1,2 @@
+RDNA all-reduce enabled on 8 rank(s) (want 8)
+no compiled graph file found in /home/fenstonemarkit/brain/cache/test-qwen3-8-27b-awq-int4

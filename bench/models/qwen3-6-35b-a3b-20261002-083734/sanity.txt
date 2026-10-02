@@ -1,0 +1,21 @@
+content: Here's a thinking process:
+
+1.  **Analyze User Input:**
+   - **Question:** What is the capital of France, and what river runs through it?
+   - **Constraint:** "In one short sentence"
+
+2.  **Identify Key Facts:**
+   - Capital of France: Paris
+   - River running through it: Seine
+
+3.  **Formulate Response (mental draft):**
+   The capital of France is Paris, and the Seine River runs through it.
+
+4.  **Check Constraints:**
+   - One sentence? Yes.
+   - Short? Yes.
+   - Answers both parts? Yes.
+
+5.  **Refine (if needed):**
+   "The capital of France is Paris, and the Seine River flows through it." (S
+reasoning (separate field): 

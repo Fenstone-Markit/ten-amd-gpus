@@ -1,0 +1,15 @@
+model-test.sh 2.0
+command: model-test.sh cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit itko
+ATTN=TRITON_ATTN MAXLEN=81920 (model maximum 262144) K=0
+ENVS=NCCL_DEBUG=INFO
+ARGS=none
+repo cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit, snapshot /models/hub/models--cyankiwi--Qwen3.6-35B-A3B-AWQ-4bit/snapshots/00fcea2d3bcf5389b518d4fc082e5590e0ba4844/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards itko: TP2, torch indices 0,7
+compile cache /home/fenstonemarkit/brain/cache/test-qwen3-6-35b-a3b-awq-4bit
+
+[09:51:08] cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit on itko (TP2, indices 0,7), drafts 0, attention TRITON_ATTN, window 81920, image localhost/n02-brain:rc3c
+[09:51:08] extra: env NCCL_DEBUG=INFO 
+[09:51:58] RESULT: the server exited while loading
+[09:51:58] stopping and removing the test container
+[09:51:58] run folder: /home/fenstonemarkit/handtest/model-runs/qwen3-6-35b-a3b-awq-4bit-20261002-095106

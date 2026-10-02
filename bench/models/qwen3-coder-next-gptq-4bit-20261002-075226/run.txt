@@ -1,0 +1,26 @@
+model-test.sh 2.0
+command: model-test.sh btbtyler09/Qwen3-Coder-Next-GPTQ-4bit brain:4
+ATTN=TRITON_ATTN MAXLEN=81920 (model maximum 262144) K=0
+repo btbtyler09/Qwen3-Coder-Next-GPTQ-4bit, snapshot /models/hub/models--btbtyler09--Qwen3-Coder-Next-GPTQ-4bit/snapshots/3f4b79c8a0af92015d041b830ea5691b9a3e2d0d/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:4: TP4, torch indices 1,2,3,4
+compile cache /home/fenstonemarkit/brain/cache/test-qwen3-coder-next-gptq-4bit
+
+[07:52:28] stopping the brain service for this test
+[07:52:44] btbtyler09/Qwen3-Coder-Next-GPTQ-4bit on brain:4 (TP4, indices 1,2,3,4), drafts 0, attention TRITON_ATTN, window 81920, image localhost/n02-brain:rc3c
+[07:53:35] loading... 60 s
+[07:54:35] loading... 120 s
+[07:55:35] loading... 180 s
+[07:56:36] loading... 240 s
+[07:57:36] loading... 300 s
+[07:58:36] loading... 360 s
+[07:59:37] loading... 420 s
+[08:00:37] loading... 480 s
+[08:01:37] loading... 540 s
+[08:02:37] loading... 600 s
+[08:03:38] loading... 660 s
+[08:04:38] loading... 720 s
+[08:05:38] up after 773 s
+[08:06:05] stopping and removing the test container
+[08:06:06] restarting the brain service
+[08:06:06] run folder: /home/fenstonemarkit/handtest/model-runs/qwen3-coder-next-gptq-4bit-20261002-075226

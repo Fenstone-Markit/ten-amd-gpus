@@ -1,0 +1,25 @@
+model-test.sh 2.0
+command: model-test.sh Qwen/Qwen3.6-35B-A3B brain:4
+ATTN=TRITON_ATTN MAXLEN=81920 (model maximum 262144) K=0
+repo Qwen/Qwen3.6-35B-A3B, snapshot /models/hub/models--Qwen--Qwen3.6-35B-A3B/snapshots/995ad96eacd98c81ed38be0c5b274b04031597b0/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:4: TP4, torch indices 1,2,3,4
+compile cache /home/fenstonemarkit/brain/cache/test-qwen3-6-35b-a3b
+
+[08:37:36] stopping the brain service for this test
+[08:37:54] Qwen/Qwen3.6-35B-A3B on brain:4 (TP4, indices 1,2,3,4), drafts 0, attention TRITON_ATTN, window 81920, image localhost/n02-brain:rc3c
+[08:38:44] loading... 60 s
+[08:39:45] loading... 120 s
+[08:40:45] loading... 180 s
+[08:41:45] loading... 240 s
+[08:42:46] loading... 300 s
+[08:43:46] loading... 360 s
+[08:44:46] loading... 420 s
+[08:45:46] loading... 480 s
+[08:46:47] loading... 540 s
+[08:47:47] loading... 600 s
+[08:48:47] loading... 660 s
+[08:49:48] up after 713 s
+[08:50:15] stopping and removing the test container
+[08:50:16] restarting the brain service
+[08:50:16] run folder: /home/fenstonemarkit/handtest/model-runs/qwen3-6-35b-a3b-20261002-083734

@@ -1,0 +1,14 @@
+model-test.sh 2.0
+command: model-test.sh cyankiwi/GLM-4.7-Flash-AWQ-4bit itko
+ATTN=auto MAXLEN=81920 (model maximum 202752) K=0
+repo cyankiwi/GLM-4.7-Flash-AWQ-4bit, snapshot /models/hub/models--cyankiwi--GLM-4.7-Flash-AWQ-4bit/snapshots/25624b53414e585bcf7dcb9584667c3106c6089b/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards itko: TP2, torch indices 0,7
+compile cache /home/fenstonemarkit/brain/cache/test-glm-4-7-flash-awq-4bit
+
+[07:38:18] cyankiwi/GLM-4.7-Flash-AWQ-4bit on itko (TP2, indices 0,7), drafts 0, attention auto, window 81920
+[07:39:08] loading... 60 s
+[07:40:08] loading... 120 s
+[07:40:18] up after 120 s
+[07:40:19] stopping and removing the test container
+[07:40:20] run folder: /home/fenstonemarkit/handtest/model-runs/glm-4-7-flash-awq-4bit-20261002-073815

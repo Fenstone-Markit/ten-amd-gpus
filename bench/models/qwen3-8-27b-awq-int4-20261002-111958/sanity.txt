@@ -1,0 +1,5 @@
+content: We need answer user's request: "In one short sentence: what is the capital of France, and what river runs through it?" Need one short sentence. Final: "The capital of France is Paris, and the Seine runs through it." Ensure one sentence.
+</think>
+
+The capital of France is Paris, and the Seine runs through it.
+reasoning (separate field): 

@@ -1,0 +1,19 @@
+model-test.sh 2.0
+command: model-test.sh et0dev/MiniMax-M2.7-AWQ-4bit brain:8
+ATTN=TRITON_ATTN MAXLEN=81920 (model maximum 196608) K=0
+repo et0dev/MiniMax-M2.7-AWQ-4bit, snapshot /models/hub/models--et0dev--MiniMax-M2.7-AWQ-4bit/snapshots/82d1e562244ccd1cc2b9746cbd48defd74ab2577/
+image localhost/n02-brain:rc3c c3a909215ad4
+cards brain:8: TP8, torch indices 1,2,3,4,5,6,8,9
+compile cache /home/fenstonemarkit/brain/cache/test-minimax-m2-7-awq-4bit
+
+[08:27:35] stopping the brain service for this test
+[08:27:52] et0dev/MiniMax-M2.7-AWQ-4bit on brain:8 (TP8, indices 1,2,3,4,5,6,8,9), drafts 0, attention TRITON_ATTN, window 81920, image localhost/n02-brain:rc3c
+[08:28:42] loading... 60 s
+[08:29:42] loading... 120 s
+[08:30:43] loading... 180 s
+[08:31:43] loading... 240 s
+[08:32:43] loading... 300 s
+[08:33:44] up after 352 s
+[08:34:41] stopping and removing the test container
+[08:34:42] restarting the brain service
+[08:34:42] run folder: /home/fenstonemarkit/handtest/model-runs/minimax-m2-7-awq-4bit-20261002-082733

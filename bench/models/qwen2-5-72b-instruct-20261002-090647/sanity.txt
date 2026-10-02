@@ -1,0 +1,2 @@
+content: The capital of France is Paris, and the Seine River runs through it.
+reasoning (separate field): 

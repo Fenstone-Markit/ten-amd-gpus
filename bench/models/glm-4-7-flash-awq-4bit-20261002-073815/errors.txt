@@ -1,0 +1,4 @@
+ERROR 10-02 07:40:19 [multiproc_executor.py:987] AttributeError: 'ColumnParallelLinear' object has no attribute 'weight'
+ERROR 10-02 07:40:19 [core.py:1197] KeyError: 'cmpl-a1dc49ddcdb385c5-0-bcfe2b15'
+ERROR 10-02 07:40:19 [async_llm.py:704] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+ERROR 10-02 07:40:19 [serving.py:471] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.

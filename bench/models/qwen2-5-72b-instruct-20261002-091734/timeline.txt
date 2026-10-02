@@ -1,0 +1,18 @@
+INFO 10-02 09:18:21 [rdna_custom_all_reduce.py:178] Enabled graph-only RDNA HIP all-reduce: gfx1100 TP8
+INFO 10-02 09:18:40 [default_loader.py:397] Loading weights took 11.85 seconds
+INFO 10-02 09:18:41 [gpu_model_runner.py:5187] Model loading took 17.0 GiB memory and 13.069085 seconds
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_6_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_7_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_1_0/model
+INFO 10-02 09:18:49 [backends.py:292] Directly load the compiled graph(s) for compile range (1, 2048) from the cache, took 2.199 s
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_0_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_5_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_3_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_4_0/model
+INFO 10-02 09:18:49 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/ffe448442096b53fe3f0ee08e040960fb534eb3132ab5560b2477fa8176c9d12/rank_2_0/model
+INFO 10-02 09:18:49 [monitor.py:81] Initial profiling/warmup run took 0.14 s
+INFO 10-02 09:18:59 [gpu_worker.py:480] Available KV cache memory: 3.68 GiB
+INFO 10-02 09:18:59 [kv_cache_utils.py:1744] GPU KV cache size: 96,464 tokens
+INFO 10-02 09:20:51 [gpu_model_runner.py:6585] Graph capturing finished in 112 secs, took 2.10 GiB
+INFO 10-02 09:20:51 [core.py:306] init engine (profile, create kv cache, warmup model) took 130.16 s (compilation: 7.71 s)
+INFO:     Application startup complete.

@@ -51,6 +51,7 @@ leaving it on the table.**
 - **Model size does not predict output quality**, and carefully scoped 4-bit costs nothing measurable. [Chapter 2](paper/02-output-quality.md)
 - **Draft tokens are nearly free once attention can verify several at once.** Each extra one costs about 0.7 ms per step. [rc3](patches/rc3/README.md)
 - **Speed did not cost quality.** After every change above, the agent's model scored 8 of 10 on the frozen rubric and fixed both defects from evidence alone. [tasks/](tasks/)
+- **The stack carries to other models.** Seven models, from 2 cards to 8, ran on the same stack, and the all-reduce engaged in every run. 4-bit bought speed only on dense models. [Models](MODELS.md)
 
 ## Chapters
 
@@ -71,6 +72,7 @@ leaving it on the table.**
 | --- | --- |
 | [`patches/`](patches/) | Everything that turns the stock image into the configuration in Chapters 1.3 and 2.2, and [`patches/rc3/`](patches/rc3/) for the rest: diffs, kernels, Containerfiles, tests and gates, all hashed |
 | [`tools/`](tools/) | Every script behind every figure, each gate with a broken control it has to reject |
+| [`MODELS.md`](MODELS.md) | Every model run on the current stack: speed, cards, what each number means, and the raw record of each run |
 | [`bench/`](bench/) | Raw output behind every figure, including `n02-bench`, the throughput harness; [`bench/rc3/`](bench/rc3/) for the rc3 releases |
 | [`tasks/`](tasks/) | The frozen evaluation rubric and every score |
 

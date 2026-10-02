@@ -1,0 +1,12 @@
+INFO 10-02 07:38:45 [rdna_custom_all_reduce.py:178] Enabled graph-only RDNA HIP all-reduce: gfx1100 TP2
+INFO 10-02 07:39:01 [default_loader.py:397] Loading weights took 11.63 seconds
+INFO 10-02 07:39:02 [gpu_model_runner.py:5187] Model loading took 9.24 GiB memory and 12.997006 seconds
+INFO 10-02 07:39:08 [backends.py:292] Directly load the compiled graph(s) for compile range (1, 2048) from the cache, took 1.548 s
+INFO 10-02 07:39:08 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/c246b777b25751375ccded851e233e27c56523ae5ad0b718d839b8c229220c05/rank_0_0/model
+INFO 10-02 07:39:08 [decorators.py:311] Directly load AOT compilation from path /root/.cache/vllm-test/torch_compile_cache/torch_aot_compile/c246b777b25751375ccded851e233e27c56523ae5ad0b718d839b8c229220c05/rank_1_0/model
+INFO 10-02 07:39:09 [monitor.py:81] Initial profiling/warmup run took 0.98 s
+INFO 10-02 07:39:11 [gpu_worker.py:480] Available KV cache memory: 11.37 GiB
+INFO 10-02 07:39:11 [kv_cache_utils.py:1744] GPU KV cache size: 225,488 tokens
+INFO 10-02 07:40:14 [gpu_model_runner.py:6585] Graph capturing finished in 63 secs, took 1.84 GiB
+INFO 10-02 07:40:14 [core.py:306] init engine (profile, create kv cache, warmup model) took 72.37 s (compilation: 5.96 s)
+INFO:     Application startup complete.
