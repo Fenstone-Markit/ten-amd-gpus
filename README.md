@@ -51,6 +51,9 @@ leaving it on the table.**
 - **Model size does not predict output quality**, and carefully scoped 4-bit costs nothing measurable. [Chapter 2](paper/02-output-quality.md)
 - **Draft tokens are nearly free once attention can verify several at once.** Each extra one costs about 0.7 ms per step. [rc3](patches/rc3/README.md)
 - **Speed did not cost quality.** After every change above, the agent's model scored 8 of 10 on the frozen rubric and fixed both defects from evidence alone. [tasks/](tasks/)
+- **A small model's missing knowledge cannot be prompted away, or searched away.** A family tutor on one card invented a game's ending under instructions not to, and again from search snippets; what worked was letting the small model decide, fetching full text, and having the 27B write. [Chapter 3](paper/03-a-tutor-on-one-card.md)
+- **A consumer NVMe drive can fall asleep and not wake.** The system drive's controller stopped answering with its link healthy; the model kept serving from memory. Its deepest sleep state is now off. [Chapter 4](paper/04-running-it.md)
+- **Every RX 7900 XTX reports x16, wherever it sits.** The real link is at the card's own upstream port: x8 on the switch, and x8 in an x16 slot on a damaged refurbished card. [Chapter 4](paper/04-running-it.md)
 - **The stack carries to other models.** Seven models, from 2 cards to 8, ran on the same stack, and the all-reduce engaged in every run. 4-bit bought speed only on dense models. [Models](MODELS.md)
 
 ## Chapters
@@ -65,6 +68,8 @@ leaving it on the table.**
 | [2.1: Does faster change what it says?](paper/02a-does-faster-change-what-it-says.md) | Five checks for any speed change, the bug a single request could not see, and the honest cost of the fastest kernel |
 | [2.2: The speed without the cost](paper/02b-the-speed-without-the-cost.md) | The fixed kernel, a correction to how 2.1 priced the cost, and a kernel that is wrong in every element |
 | [rc3: the all-reduce and the draft tokens](patches/rc3/README.md) | The eight-card all-reduce, a tuned kernel, and the attention change that made three draft tokens work. 76.4 to about 160 tok/s at 60K |
+| [3: A tutor on one refurbished card](paper/03-a-tutor-on-one-card.md) | A homework tutor for teenagers on one 24 GB card, over WhatsApp: what prompts could not fix, what search could not fix, and the split that did |
+| [4: Running it](paper/04-running-it.md) | A console built from real hardware, a drive that slept and did not wake, a card 18 degrees hotter than its neighbour, and a retraction |
 
 ## Tools
 
@@ -100,6 +105,8 @@ Measured far enough that anyone can pick them up:
 - **One kernel per multiply.** A fused version was correct but slower at two rows and up; the separate reduction pass stays.
 - **Precision on neutral text**, replacing the figure Chapter 2.2 withdrew.
 - **A harder evaluation task**, with tool access, that separates models above the floor Task 01 sets.
+- **A newer brain.** The 27B has served since the optimisation work began; Qwen3.5-122B-A10B already runs here at 179 tok/s and waits for its quality gate.
+- **The tutor's open items:** a real safety check on every answer, real homework photos, documents, and the 35B on two cards. [Chapter 3](paper/03-a-tutor-on-one-card.md)
 
 ## Corrections
 
