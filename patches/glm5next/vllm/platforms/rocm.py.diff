@@ -1,0 +1,10 @@
+--- a/vllm/platforms/rocm.py (overlay)
++++ b/vllm/platforms/rocm.py
+@@ -586,7 +586,6 @@
+         return valid_backends_priorities, invalid_reasons
+ 
+     @classmethod
+-    @classmethod
+     def _get_indexer_block_alignment(cls, vllm_config: "VllmConfig") -> int | None:
+         # glm5 overlay: port of PR #53906's platforms/cuda.py override. The
+         # constraint originates in the MODEL file

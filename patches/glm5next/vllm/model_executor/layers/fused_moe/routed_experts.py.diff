@@ -1,0 +1,11 @@
+--- a/vllm/model_executor/layers/fused_moe/routed_experts.py (image)
++++ b/vllm/model_executor/layers/fused_moe/routed_experts.py
+@@ -206,7 +206,7 @@
+     def _needs_intermediate_size_param(self, quant_method: FusedMoEMethodBase) -> bool:
+         return quant_method.__class__.__name__ in (
+             "AutoGPTQMoEMethod",
+-            "CompressedTensorsWNA16MoEMethod",
++            "CompressedTensorsWNA16MoEMethod", "CompressedTensorsWNA16RDNA3MoEMethod",
+             "CompressedTensorsW4A16FlydslMoEMethod",
+         )
+ 

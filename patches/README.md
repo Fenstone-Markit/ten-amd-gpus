@@ -1,5 +1,7 @@
 # Patches
 
+> Update 2026-10-19: the GLM-5.3-Flash port of Chapter 5 is in [glm5next/](glm5next/README.md), with its own base image.
+>
 > Update 2026-10-01: the configuration now running is rc3, built on top of this one. See [rc3/](rc3/README.md).
 
 Everything that turns the stock image into the configuration measured in Chapters 1.3 and 2.2

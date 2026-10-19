@@ -1,0 +1,39 @@
+# Manifest
+
+sha256 of every file in this folder, 2026-10-19.
+
+```
+1f3d30bd8b36fc2f6bbcc61b9ef14411faa191e907af9adcb7334c81614d1578  ./apply_port.sh
+47aac4ae981e0b64c16827cf856f7d5a46975dec21fbe7f02ad5fc8d992f0732  ./LICENSE-overlay
+0dfd45355e613ac5453363509f4f55d5694f66e32a31350432ea3359e6aedc4b  ./README.md
+3741bfb3eba43241a78292305b6eeb1120fad45d0cc60b542f366e7d592aeea8  ./vllm/compilation/breakable_cudagraph.py
+060edbe0a7fbc01b0d773d96b5fc01d69fb3d3a511a12b46759045890d689349  ./vllm/compilation/breakable_cudagraph.py.diff
+5c40eb04731819c032a3c088db2e791f24c4a172533a7f9c4714e44b906f5efe  ./vllm/model_executor/layers/fused_moe/routed_experts.py
+30a974e6a003571ccd2b67713ff61768f97e9261669e99654a639ab2780b84f8  ./vllm/model_executor/layers/fused_moe/routed_experts.py.diff
+6e19532b80fe9323c14b755c5adc5a86c29246f0de6b446f4677fef4e581ac18  ./vllm/model_executor/layers/mhc.py
+a0c56da966097525638172841cb66e4b4d1c8621aab1279416bc2c9ad886be83  ./vllm/model_executor/layers/mhc.py.diff
+b5dedeb85db7850fc8c6f2c69d65063eb36f9efef1e72e6d7c4ad056875f3a7b  ./vllm/model_executor/layers/mla.py
+52d6fcd3589ba6cd1703259e556cca56b4d1a285609b76cc526aaf8f2233872f  ./vllm/model_executor/layers/mla.py.diff
+af549f09bb4aed9cb0b36b749c500065dc68d7d1fb06e6da8bb5626e3de5576b  ./vllm/model_executor/layers/sparse_attn_indexer_kpool.py
+591696f5a24cd9347e4ad2b567e68f2b1d2808f8e97f28d0a1522f5f6ece01e6  ./vllm/model_executor/layers/sparse_attn_indexer_kpool.py.diff
+97b20cbcbaae7076136c0905582a883439f989465fe4b40db45cba0e4a478431  ./vllm/models/glm5next/nvidia/model.py
+6792e42c1ebd8b27b4ed760decd1ac455eb943fd1921f74c61ceb1313faef391  ./vllm/models/glm5next/nvidia/model.py.diff
+87b0e4b4949ba687fad0508790d13833b1080cff9ec89af873734ddef10172a5  ./vllm/platforms/rocm.py
+9a52de32f406ce1891cecbd434066304abcf6481faec564a4682a119ed7a07da  ./vllm/platforms/rocm.py.diff
+ea6520a80896cc81ebc6bb32c0731e739e9f24176b30a87b74c05b911a1d9d5c  ./vllm/third_party/flash_linear_attention/ops/index.py
+12b5e133f391433e616db95727ea18f057a1dce9e27ef8852a8e7b7b3a6fe168  ./vllm/third_party/flash_linear_attention/ops/index.py.diff
+d015eba3ea651267231302ca134a0f9db25160ac739a68c66d2e9585a822cc7c  ./vllm/v1/attention/backends/mla/indexer.py
+015c523e29e8c954c14ece36e552fea6b13184e4458cfcb6a1aab239720a0873  ./vllm/v1/attention/backends/mla/indexer.py.diff
+ccebefeec20ae330895c4b6bd0e715af55ea88a7c72012ec6cb7a0a2dda4eea2  ./vllm/v1/attention/backends/registry.py
+9b860f0ef8829bb787f4ad4700e733c012874d91910613add826264acc6a4bf5  ./vllm/v1/attention/backends/registry.py.diff
+0d68c6fff3b7af86babc5c66474294e4b6a5d6e3575c0c9db8345d8dc09de2da  ./vllm/v1/attention/ops/rocm_aiter_mla_sparse.py
+06d5c38b5271ed0957b529f4f42ba168cb3fc4a265a2f16af32a2e4386ce9c5c  ./vllm/v1/attention/ops/rocm_aiter_mla_sparse.py.diff
+fefaf361c94412230769c7e3f60893c67457b3a05903cd24e0fae0714a02c4dd  ./vllm/v1/core/kv_cache_utils.py
+61c90d8eb47da7d82bc14519b1237b71b82592e396a28c3dc0ec54bbc21adec5  ./vllm/v1/core/kv_cache_utils.py.diff
+c67bda2886b52865ddafabaae7d797c359e930752f374421a33e537d94a5f45a  ./vllm/v1/core/sched/scheduler.py
+5c9be1659a7a78dd49991f386cf16cd7ee7b9e1d0d11ee9e3a375fc78a5c1665  ./vllm/v1/core/sched/scheduler.py.diff
+35762000cfa1b6497f93a024364821004c53af75302270764d71ace91b90a855  ./vllm/v1/worker/gpu_model_runner.py
+586675583ec5baed1ec97790720d347a718c5faa12a33a0c0a535140110325b9  ./vllm/v1/worker/gpu_model_runner.py.diff
+44f72159b86ebd1a2ee8f940c88b2d5aa1468a8fda88bbe925b58fde299490e6  ./vllm/v1/worker/gpu_worker.py
+46724dec9a2660a69d99fcc15b4e917e95d788b4a14693ca06280ed6b01b0435  ./vllm/v1/worker/gpu_worker.py.diff
+```

@@ -1,0 +1,123 @@
+--- a/vllm/v1/core/sched/scheduler.py (overlay)
++++ b/vllm/v1/core/sched/scheduler.py
+@@ -51,7 +51,7 @@
+     SchedulingPolicy,
+     create_request_queue,
+ )
+-from vllm.v1.core.sched.utils import DegenParams, check_stop, remove_all
++from vllm.v1.core.sched.utils import check_stop, remove_all
+ from vllm.v1.engine import EngineCoreEventType, EngineCoreOutput, EngineCoreOutputs
+ from vllm.v1.kv_cache_interface import KVCacheConfig
+ from vllm.v1.metrics.perf import ModelMetrics, PerfStats
+@@ -113,13 +113,6 @@
+             else self.scheduler_config.max_num_batched_tokens
+         )
+         self.max_model_len = vllm_config.model_config.max_model_len
+-        # Server-wide degenerate-loop detection thresholds, applied to every
+-        # request in check_stop. degen_max_period == 0 disables it.
+-        self.degen_params = DegenParams(
+-            max_period=self.scheduler_config.degen_max_period,
+-            min_repeats=self.scheduler_config.degen_min_repeats,
+-            min_span=self.scheduler_config.degen_min_span,
+-        )
+         self.enable_kv_cache_events = (
+             self.kv_events_config is not None
+             and self.kv_events_config.enable_kv_cache_events
+@@ -388,7 +381,8 @@
+         )
+         # Split only during prefill: `request.num_tokens - 1` extends this to
+         # resumed requests replaying their output tokens.
+-        if start >= max(request.num_prompt_tokens, request.num_tokens - 1):
++        prefill_end = max(request.num_prompt_tokens, request.num_tokens - 1)
++        if start >= prefill_end:
+             return num_new_tokens
+ 
+         block_size = self.cache_config.block_size
+@@ -400,10 +394,12 @@
+             last_cache_position = max(last_cache_position - block_size, 0)
+ 
+         end = start + num_new_tokens
+-        # Until `last_cache_position`, prefer chunks ending on block
+-        # boundaries. When a block cannot fit in any configured prefill chunk,
+-        # allow sub-block progress and re-align at the next reachable boundary.
+-        if end < last_cache_position:
++        # Invariant: slot p holds the state after exactly (p + 1) * block_size
++        # tokens. State is written at chunk ends, so chunk ends must be block
++        # aligned. Exempt: the prompt's last chunk, whose slot decode advances
++        # to the boundary. A block too wide for one chunk advances sub-block
++        # and re-aligns at the next boundary.
++        if end < prefill_end:
+             max_prefill_tokens = self.max_num_scheduled_tokens
+             long_prefill_threshold = self.scheduler_config.long_prefill_token_threshold
+             if long_prefill_threshold > 0:
+@@ -419,12 +415,9 @@
+             else 0
+         )
+         stops = (
+-            # Resumed mid-block (fine-grained partial hash hit): re-align to
+-            # the block grid before running on, so the crossed boundary's
+-            # state is materialized (unless it is past the cacheable range).
+-            next_block_boundary
+-            if start % block_size != 0 and next_block_boundary <= last_cache_position
+-            else 0,
++            # Same invariant: a chunk starting mid-block stops at the boundary
++            # rather than running past it.
++            next_block_boundary if start % block_size != 0 else 0,
+             # Never run past the last cacheable block boundary mid-chunk.
+             last_cache_position,
+             # Fine-grained hits: the prompt's partial-tail entry can only be
+@@ -2111,7 +2104,7 @@
+ 
+             # Check for stop and update request state.
+             # This must be called before we make the EngineCoreOutput.
+-            stopped = check_stop(request, self.max_model_len, self.degen_params)
++            stopped = check_stop(request, self.max_model_len)
+             if stopped:
+                 del new_token_ids[num_new:]  # Trim new tokens if needed.
+                 break
+@@ -2735,39 +2728,17 @@
+         # KV Connector:: update recv and send status from last step.
+         for req_id in kv_connector_output.finished_recving or ():
+             logger.debug("Finished recving KV transfer for request %s", req_id)
+-            req = self.requests.get(req_id)
+-            if req is None:
+-                # The request was already removed (e.g. aborted after a
+-                # failed/late KV transfer). Drop the stale completion instead
+-                # of crashing the engine.
+-                logger.warning(
+-                    "Finished recving KV transfer for request %s, but it is "
+-                    "no longer tracked (likely aborted). Ignoring.",
+-                    req_id,
+-                )
+-                continue
++            assert req_id in self.requests
++            req = self.requests[req_id]
+             if req.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
+                 self.finished_recving_kv_req_ids.add(req_id)
+-            elif RequestStatus.is_finished(req.status):
+-                self._free_blocks(req)
+             else:
+-                logger.warning(
+-                    "Finished recving KV transfer for request %s in "
+-                    "unexpected status %s; ignoring.",
+-                    req_id,
+-                    req.status,
+-                )
++                assert RequestStatus.is_finished(req.status)
++                self._free_blocks(self.requests[req_id])
+         for req_id in kv_connector_output.finished_sending or ():
+             logger.debug("Finished sending KV transfer for request %s", req_id)
+-            req = self.requests.get(req_id)
+-            if req is None:
+-                logger.warning(
+-                    "Finished sending KV transfer for request %s, but it is "
+-                    "no longer tracked (likely aborted). Ignoring.",
+-                    req_id,
+-                )
+-                continue
+-            self._free_blocks(req)
++            assert req_id in self.requests
++            self._free_blocks(self.requests[req_id])
+ 
+     def _update_requests_with_invalid_blocks(
+         self,

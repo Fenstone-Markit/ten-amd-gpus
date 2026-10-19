@@ -1,0 +1,229 @@
+--- a/vllm/models/glm5next/nvidia/model.py (overlay)
++++ b/vllm/models/glm5next/nvidia/model.py
+@@ -6,6 +6,7 @@
+ 
+ import torch
+ from torch import nn
++import os
+ 
+ from vllm.config import ParallelConfig, VllmConfig
+ from vllm.distributed import (
+@@ -471,6 +472,13 @@
+             and _GLM5_SUBLAYER_RANGE[0] <= self.layer_idx <= _GLM5_SUBLAYER_RANGE[1]
+         )
+         if post is None:
++            # Standalone pre. Only the model's global layer 0 expands the
++            # single-stream embed into the n-stream residual. Under PP the
++            # receiving stage's first mHC layer instead receives the n-stream
++            # state materialised by the sending stage (see Glm5NextModel), so
++            # it already has an [N, n, H] residual and must NOT expand --
++            # hence the original `if self.layer_idx == 0` guard is restored
++            # (hc_expand runs only at the global layer 0, as in the overlay).
+             if self.layer_idx == 0:
+                 x = hc_expand(x, self.n)
+             residual = x
+@@ -691,6 +699,77 @@
+         # doesn't rebuild the slice (a fresh list) every step.
+         self._active_layers = self.layers[self.start_layer : self.end_layer]
+ 
++        # Part 2 identical-weights check: when GLM5_ENABLE_HC_RMS=1, report a
++        # deterministic checksum (float64 sum + abs sum) of every local layer's
++        # parameters, keyed by GLOBAL layer index, plus the embedding on the
++        # first rank. Dummy weights are seeded per-parameter with a fixed seed
++        # (weight_utils.initialize_single_dummy_weight), so the same named
++        # param has the same values in every layout; these checksums prove the
++        # two PP layouts load identical weights.
++        if os.environ.get("GLM5_ENABLE_HC_RMS", "0") in ("1", "true", "True", "yes"):
++            with torch.no_grad():
++                # Named params for the identical-weights check: every local
++                # decoder layer's input_layernorm weight (a clean bf16 [H]
++                # RMSNorm vector seeded by dummy init) + the embedding on rank 0.
++                # Logging every local layer lets me compare a named param in
++                # each PP stage against the same-named param in the TP1
++                # reference (which holds all layers on one card).
++                for gi, layer in enumerate(self._active_layers):
++                    _w = layer.input_layernorm.weight.data
++                    _f = _w.detach().float().double()
++                    logger.info(
++                        "[GLM5_WCS] rank=%d param=layers.%d.input_layernorm "
++                        "sum=%.9e abs=%.9e",
++                        get_pp_group().rank_in_group,
++                        self.start_layer + gi,
++                        float(_f.sum().item()),
++                        float(_f.abs().sum().item()),
++                    )
++                if get_pp_group().is_first_rank:
++                    _w = self.embed_tokens.weight.data
++                    _f = _w.detach().float().double()
++                    logger.info(
++                        "[GLM5_WCS] rank=%d param=embed_tokens.sum=%.9e abs=%.9e",
++                        get_pp_group().rank_in_group,
++                        float(_f.sum().item()),
++                        float(_f.abs().sum().item()),
++                    )
++
++        # PP: build the stage-to-stage intermediate tensors. The model passes
++        # (hidden_states, residual) across pipeline stages. With mHC the residual
++        # is the n-stream multi-residual [N, n, H] (see hc_expand), NOT [N, H],
++        # so the standard make_empty_intermediate_tensors_factory (which makes a
++        # 2D [batch, hidden] buffer for every key) cannot size it. Use a custom
++        # builder with the same contract: (batch_size, dtype, device) ->
++        # IntermediateTensors. post/comb (the deferred mHC hc_post state) are not
++        # propagated across stages (the receiving stage restarts from
++        # hc_expand), so they are not part of the intermediate tensors.
++        _n_streams = (
++            config.mhc_num_residual_streams
++            if getattr(config, "mhc", False)
++            else 1
++        )
++
++        def _make_empty_intermediate_tensors(
++            batch_size: int,
++            dtype: torch.dtype,
++            device: torch.device,
++        ) -> IntermediateTensors:
++            # The stage-to-stage state is the n-stream multi-residual
++            # [N, n, H] materialised by the sending stage's last mHC layer
++            # (hc_post). One buffer, sized to exactly what is sent.
++            return IntermediateTensors(
++                {
++                    "residual": torch.zeros(
++                        (batch_size, _n_streams, config.hidden_size),
++                        dtype=dtype,
++                        device=device,
++                    ),
++                }
++            )
++
++        self.make_empty_intermediate_tensors = _make_empty_intermediate_tensors
++
+         if get_pp_group().is_last_rank:
+             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+         else:
+@@ -757,10 +836,12 @@
+             comb = None
+         else:
+             assert intermediate_tensors is not None
+-            hidden_states = intermediate_tensors["hidden_states"]
++            # The receiving stage gets the n-stream multi-residual [N, n, H]
++            # materialised by the sending stage's last mHC layer (hc_post).
++            # Feed it as the first layer's input so its standalone hc_pre
++            # receives [N, n, H] directly (no expand). post/comb are None.
+             residual = intermediate_tensors["residual"]
+-            # post/comb (deferred mHC hc_post state) are not propagated across
+-            # PP ranks; the receiving rank's first mHC layer uses standalone pre.
++            hidden_states = residual
+             post = None
+             comb = None
+ 
+@@ -792,10 +873,52 @@
+                 except ValueError:
+                     _GLM5_SUBLAYER_DUMP = None
+         aux_hidden_states: list[torch.Tensor] = []
++        _hc_rms_on = os.environ.get("GLM5_ENABLE_HC_RMS", "0") in (
++            "1",
++            "true",
++            "True",
++            "yes",
++        )
++        if _hc_rms_on:
++            from vllm.distributed import get_tensor_model_parallel_rank
++
++            _hc_rms_on = get_tensor_model_parallel_rank() == 0
++        import os as _os
++        _mt = _os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++        _mt_base = (torch.cuda.memory_allocated() if _mt else 0)
+         for layer_idx, layer in enumerate(self._active_layers):
++            if _mt and not torch.cuda.is_current_stream_capturing():
++                torch.cuda.synchronize()
+             hidden_states, residual, post, comb = layer(
+                 positions, hidden_states, residual, post, comb
+             )
++            if _mt and not torch.cuda.is_current_stream_capturing():
++                _pk = torch.cuda.memory_stats().get("allocated_bytes.all.peak", 0)
++                _gidx = self.start_layer + layer_idx
++                print(f"[MEM_LAYER] layer={_gidx} cum_peak={_pk/1024**3:.3f} "
++                      f"GiB  vs_base={(_pk-_mt_base)/1024**3:.3f} GiB", flush=True)
++            if _hc_rms_on:
++                # Boundary-comparison trace: per GLOBAL decoder layer, log the
++                # hidden (ffn-pre) RMS and the n-stream residual-state RMS, with
++                # the token count (prefill = prompt tokens; decode = 1). The
++                # residual is the [N, n, H] mHC state, so it is the quantity
++                # that crosses the PP boundary and must agree layer-by-layer.
++                _gidx = self.start_layer + layer_idx
++                _hf = hidden_states.float()
++                _hr = (
++                    residual.float().pow(2).mean().sqrt().item()
++                    if isinstance(residual, torch.Tensor)
++                    else float("nan")
++                )
++                logger.info(
++                    "[GLM5_HC_RMS] layer=%d stage=%d tokens=%d hidden_rms=%.6e "
++                    "residual_rms=%.6e",
++                    _gidx,
++                    get_pp_group().rank_in_group,
++                    full_num_tokens,
++                    _hf.pow(2).mean().sqrt().item(),
++                    _hr,
++                )
+             if (layer_idx + 1) in self.aux_hidden_state_layers:
+                 # DFlash taps are base hidden-size layer outputs. GLM5 mHC
+                 # carries expanded residual streams between layers, so
+@@ -847,14 +970,17 @@
+                 )
+ 
+         if not get_pp_group().is_last_rank:
+-            # PP is gated off for GLM-5.3-Flash (no make_empty_intermediate_tensors),
+-            # so this branch is not exercised. post/comb are the deferred
+-            # hc_post state of this rank's last mHC layer; a future PP path
+-            # would need to propagate them, but for now they are dropped (the
+-            # receiving rank's first layer would fall back to standalone pre).
+-            return IntermediateTensors(
+-                {"hidden_states": hidden_states, "residual": residual}
+-            )
++            # Materialise the n-stream state at this stage's last mHC layer
++            # (hc_post of its deferred state) and send it across the boundary.
++            # This is the true model state here; port-05 instead sent
++            # {hidden_states, residual} and dropped post/comb, which loses the
++            # ffn-pre contribution (see audit / Part 2).
++            last_layer = self._active_layers[-1]
++            if post is not None:
++                state = last_layer.hc_post(hidden_states, residual, post, comb)
++            else:
++                state = residual
++            return IntermediateTensors({"residual": state})
+ 
+         if self.is_sequence_parallel:
+             hidden_states = sp_all_gather(hidden_states)[:full_num_tokens]
+@@ -1077,6 +1203,12 @@
+         self.model = Glm5NextModel(
+             vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model")
+         )
++        # PP: expose the stage-to-stage intermediate-tensors builder on the
++        # wrapper too (the runner calls model.make_empty_intermediate_tensors on
++        # the top-level model).
++        self.make_empty_intermediate_tensors = (
++            self.model.make_empty_intermediate_tensors
++        )
+         if get_pp_group().is_last_rank:
+             self.lm_head = ParallelLMHead(
+                 self.config.vocab_size,
+@@ -1249,9 +1381,15 @@
+                 architectures=["Glm5NextForCausalLM"],
+             )
+ 
+-        # Glm5NextForCausalLM does not implement make_empty_intermediate_tensors,
+-        # so pipeline parallelism is gated off (consistent with the text-only
+-        # model) and we intentionally do not alias it here.
++        # PP: expose the stage-to-stage intermediate-tensors builder on the
++        # multimodal wrapper too (the runner calls
++        # model.make_empty_intermediate_tensors on the top-level model). The base
++        # Glm4vForConditionalGeneration.__init__ does this, but this wrapper
++        # calls nn.Module.__init__ directly (super(Glm4vForConditionalGeneration,
++        # self).__init__()), so alias it here from the language model.
++        self.make_empty_intermediate_tensors = (
++            self.language_model.make_empty_intermediate_tensors
++        )
+ 
+     def get_encoder_cudagraph_config(self):
+         # The forked vision tower (multimodal.py) has no abs-pos embeddings, so its

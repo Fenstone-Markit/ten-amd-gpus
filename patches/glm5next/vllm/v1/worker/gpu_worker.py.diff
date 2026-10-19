@@ -1,0 +1,87 @@
+--- a/vllm/v1/worker/gpu_worker.py (image)
++++ b/vllm/v1/worker/gpu_worker.py
+@@ -471,29 +471,41 @@
+         """
+         maybe_apply_startup_plan(self)
+ 
+-        if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
+-            # still need a profile run which compiles the model for
+-            # max_num_batched_tokens
+-            self.model_runner.profile_run()
++        # [glm5next-port-14] GLM5_PROFILE_ALWAYS=1 (off by default): when
++        # kv_cache_memory_bytes is set, still run the full memory profile and
++        # every step it gates, then size the KV cache from kv_cache_memory_bytes
++        # as given (see the return at the end of this function). Off -> the
++        # kv-bytes branch returns early exactly as before.
++        _profile_always = (os.environ.get("GLM5_PROFILE_ALWAYS", "") == "1")
+ 
+-            msg = (
+-                f"Initial free memory {format_gib(self.init_snapshot.free_memory)} "
+-                f"GiB, reserved {format_gib(kv_cache_memory_bytes)} GiB memory for "
+-                "KV Cache as specified by kv_cache_memory_bytes config and "
+-                "skipped memory profiling. This does not respect the "
+-                "gpu_memory_utilization config. Only use kv_cache_memory_bytes "
+-                "config when you want manual control of KV cache memory "
+-                "size. If OOM'ed, check the difference of initial free "
+-                "memory between the current run and the previous run "
+-                "where kv_cache_memory_bytes is suggested and update it "
+-                "correspondingly."
+-            )
+-            logger.info(msg)
+-            return reserve_mm_ipc_gpu_memory(
+-                kv_cache_memory_bytes,
+-                self.model_config.multimodal_config,
+-                getattr(self.parallel_config, "_api_process_count", 1),
+-            )
++        if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
++            if not _profile_always:
++                # still need a profile run which compiles the model for
++                # max_num_batched_tokens
++                self.model_runner.profile_run()
++
++                msg = (
++                    f"Initial free memory {format_gib(self.init_snapshot.free_memory)} "
++                    f"GiB, reserved {format_gib(kv_cache_memory_bytes)} GiB memory for "
++                    "KV Cache as specified by kv_cache_memory_bytes config and "
++                    "skipped memory profiling. This does not respect the "
++                    "gpu_memory_utilization config. Only use kv_cache_memory_bytes "
++                    "config when you want manual control of KV cache memory "
++                    "size. If OOM'ed, check the difference of initial free "
++                    "memory between the current run and the previous run "
++                    "where kv_cache_memory_bytes is suggested and update it "
++                    "correspondingly."
++                )
++                logger.info(msg)
++                return reserve_mm_ipc_gpu_memory(
++                    kv_cache_memory_bytes,
++                    self.model_config.multimodal_config,
++                    getattr(self.parallel_config, "_api_process_count", 1),
++                )
++            # GLM5_PROFILE_ALWAYS: fall through to the normal profile path below.
++            # It runs profile_run + profile_cudagraph_memory + the
++            # available_kv_cache_memory_bytes computation, then this function
++            # overrides the returned KV size with kv_cache_memory_bytes.
+ 
+         # Execute a forward pass with dummy inputs to profile the memory usage
+         # of the model.
+@@ -604,6 +616,20 @@
+                     suggested_util,
+                 )
+ 
++        # [glm5next-port-14] GLM5_PROFILE_ALWAYS: the profile ran (above); use the
++        # user-given KV size instead of the measured available_kv_cache_memory_bytes.
++        if _profile_always and kv_cache_memory_bytes:
++            logger.info(
++                "[glm5-profile-always] memory profile ran; using KV cache size from "
++                "kv_cache_memory_bytes = %s GiB (measured available would be %s GiB).",
++                format_gib(kv_cache_memory_bytes),
++                format_gib(self.available_kv_cache_memory_bytes),
++            )
++            return reserve_mm_ipc_gpu_memory(
++                int(kv_cache_memory_bytes),
++                self.model_config.multimodal_config,
++                getattr(self.parallel_config, "_api_process_count", 1),
++            )
+         return reserve_mm_ipc_gpu_memory(
+             int(self.available_kv_cache_memory_bytes),
+             self.model_config.multimodal_config,

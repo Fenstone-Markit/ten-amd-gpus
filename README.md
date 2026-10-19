@@ -22,6 +22,17 @@ Same cards, same model, same weights, with the quantized multiplies at the preci
 range is speculative decoding: the more predictable the text, the more of its three draft tokens are
 accepted per step. **The silicon was never the limit. The tuning was.**
 
+## Now: a 321B model on the same ten cards
+
+| GLM-5.3-Flash, 321B mixture of experts, 4-bit | Measured |
+| --- | --- |
+| Context window | **131,072 tokens** |
+| Reading a 119,517-token prompt | **43.9 s**, about 2,700 tok/s, answered correctly |
+| Decode | **35 tok/s** |
+| Official support for these cards | none: the recipe covers one AMD chip, the MI355X |
+
+It runs through a community RDNA4 port and 14 patches of mine, and every window above 32,768 failed until one shortcut in that port was put back the way upstream does it. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md), [the port](patches/glm5next/README.md)
+
 ## To AMD: what you are leaving on the table
 
 Every row below is a software change, measured on this machine. Most are a few lines.
@@ -34,6 +45,7 @@ Every row below is a software change, measured on this machine. Most are a few l
 | An eight-card RDNA3 all-reduce: I extended [vLLM #57767](https://github.com/vllm-project/vllm/pull/57767) from two and four cards to eight | 3.8× faster than RCCL at decode size, exact on every card; 38 % faster decode end to end | [rc3](patches/rc3/README.md) |
 | Let the long-context attention path verify four tokens at once, not two (two lines) | Three draft tokens become nearly free: decode at 60K goes from 110 tok/s to between 145 and 162 | [rc3](patches/rc3/README.md) |
 | Fix QuickReduce for consumer cards, or compile it out of their image | Today it returns a wrong value in every element on this card | [2.2](paper/02b-the-speed-without-the-cost.md) |
+| A GLM-5.3-Flash path for RDNA, not only the MI355X | A 321B model at 131,072 tokens and 35 tok/s on ten consumer cards, through a community port | [5](paper/05-a-321b-model-on-ten-cards.md) |
 | An RDNA3 continuous-integration runner | Every defect in this repository shipped without one | all |
 
 With the defaults and settings in Chapters 1.2 and 1.3 and the rc3 patches, these took one model from
@@ -54,6 +66,8 @@ leaving it on the table.**
 - **A small model's missing knowledge cannot be prompted away, or searched away.** A family tutor on one card invented a game's ending under instructions not to, and again from search snippets; what worked was letting the small model decide, fetching full text, and having the 27B write. [Chapter 3](paper/03-a-tutor-on-one-card.md)
 - **A consumer NVMe drive can fall asleep and not wake.** The system drive's controller stopped answering with its link healthy; the model kept serving from memory. Its deepest sleep state is now off. [Chapter 4](paper/04-running-it.md)
 - **Every RX 7900 XTX reports x16, wherever it sits.** The real link is at the card's own upstream port: x8 on the switch, and x8 in an x16 slot on a damaged refurbished card. [Chapter 4](paper/04-running-it.md)
+- **A 321B model serves 131,072 tokens on ten consumer cards.** GLM-5.3-Flash reads a 120,000-token prompt in 44 s and decodes at 35 tok/s; llama.cpp reads the same model about 15 times slower. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
+- **One speed shortcut broke every window above 32,768, four different ways.** A wrong answer, a dead start-up, an error, a GPU crash: all from chunk counts built on the GPU. Building them on the CPU, as upstream does, fixed all four at no measurable cost. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
 - **The stack carries to other models.** Seven models, from 2 cards to 8, ran on the same stack, and the all-reduce engaged in every run. 4-bit bought speed only on dense models. [Models](MODELS.md)
 
 ## Chapters
@@ -70,6 +84,7 @@ leaving it on the table.**
 | [rc3: the all-reduce and the draft tokens](patches/rc3/README.md) | The eight-card all-reduce, a tuned kernel, and the attention change that made three draft tokens work. 76.4 to about 160 tok/s at 60K |
 | [3: A tutor on one refurbished card](paper/03-a-tutor-on-one-card.md) | A homework tutor for teenagers on one 24 GB card, over WhatsApp: what prompts could not fix, what search could not fix, and the split that did |
 | [4: Running it](paper/04-running-it.md) | A console built from real hardware, a drive that slept and did not wake, a card 18 degrees hotter than its neighbour, and a retraction |
+| [5: A 321B model on ten consumer cards](paper/05-a-321b-model-on-ten-cards.md) | GLM-5.3-Flash with no official path: the window ladder, the bug behind 32,768, two withdrawn explanations, and moving the brain to two cards |
 
 ## Tools
 
@@ -90,7 +105,7 @@ leaving it on the table.**
 | Memory | 512 GB DDR4-3200 ECC, 8 channels |
 | Interconnect | PCIe Gen4 x8 to every card, through one PEX880xx Gen4 switch. No fabric |
 | Power and cooling | Multiple supplies on a 20 A 240 V circuit, open bench, garage |
-| The agent's model | `cyankiwi/Qwen3.8-27B-AWQ-INT4`, revision `6e134bae` |
+| The agent's model | `cyankiwi/Qwen3.8-27B-AWQ-INT4`, revision `6e134bae`; since 2026-10-17 on a second machine's two cards, so the ten are free for GLM-5.3-Flash |
 
 Every measurement names the container image it was taken on. After Chapter 1.1, a throughput number
 without an image tag is not a measurement.
@@ -105,7 +120,7 @@ Measured far enough that anyone can pick them up:
 - **One kernel per multiply.** A fused version was correct but slower at two rows and up; the separate reduction pass stays.
 - **Precision on neutral text**, replacing the figure Chapter 2.2 withdrew.
 - **A harder evaluation task**, with tool access, that separates models above the floor Task 01 sets.
-- **A newer brain.** The 27B has served since the optimisation work began; Qwen3.5-122B-A10B already runs here at 179 tok/s and waits for its quality gate.
+- **A newer brain.** GLM-5.3-Flash serves 131,072 tokens on the ten cards; a long soak and a real agent session come before it replaces the 27B. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
 - **The tutor's open items:** a real safety check on every answer, real homework photos, documents, and the 35B on two cards. [Chapter 3](paper/03-a-tutor-on-one-card.md)
 
 ## Corrections

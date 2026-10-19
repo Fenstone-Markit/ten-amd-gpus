@@ -1,0 +1,67 @@
+--- a/vllm/v1/attention/ops/rocm_aiter_mla_sparse.py (overlay)
++++ b/vllm/v1/attention/ops/rocm_aiter_mla_sparse.py
+@@ -237,6 +237,51 @@
+     grid = (num_tokens,)
+     k_fp8_scale = k_fp8_scale.view(torch.float32)
+     layout = "NORMAL" if block_size == 1 else "SHUFFLE"
++    # [glm5next-port-17] Host-side index audit of this launch, gated on GLM5_DSA_AUDIT
++    # (off by default; the audit is also behind GLM5_DSA_BREAK per the brief, but a
++    # separate opt-in keeps it from adding a per-launch DtoH sync to every run).
++    # Computes the largest index this kernel will READ from the kv-cache and WRITE
++    # to the fp8 outputs, from the block table / seqlens / block size / grid, and
++    # prints the first launch where one exceeds the corresponding tensor size.
++    import os as _os
++    if _os.environ.get("GLM5_DSA_AUDIT"):
++        try:
++            _seq = cu_seqlen.detach().to(torch.int64).cpu()
++            _bt = block_table.detach().to(torch.int64).cpu()
++            _B = int(_seq.shape[0]) - 1
++            _stride = int(k_cache_value.stride(0))
++            _blk_w = int(_bt.shape[1]) if _bt.dim() > 1 else 0
++            _max_bi = -1
++            _nvalid = 0
++            for _b in range(_B):
++                _s = int(_seq[_b]); _e = int(_seq[_b + 1])
++                if _e <= _s:
++                    continue
++                _n = _e - _s
++                _bti = torch.arange(_n) // int(block_size)
++                _bti = _bti[_bti < _blk_w]
++                if _bti.numel() == 0:
++                    continue
++                _ids = _bt[_b][_bti]
++                _ids = _ids[_ids >= 0]
++                if _ids.numel():
++                    _nvalid += int(_ids.numel())
++                    _max_bi = max(_max_bi, int(_ids.max()))
++            _total = int(k_cache_value.numel())
++            _max_read = (_max_bi + 1) * _stride if _max_bi >= 0 else 0
++            _max_write = int(num_tokens) * int(head_dim)
++            _fp8_total = int(k_fp8.numel())
++            _exceed = (_max_bi >= int(num_blocks)) or (_max_read > _total) or (_max_write > _fp8_total)
++            print(
++                "[DSA-GATHER-AUDIT] B=%d num_tokens=%d num_blocks=%d block_size=%d head_dim=%d "
++                "max_block_id=%d (valid tokens=%d) | kv_cache total=%d max_read_idx=%d | "
++                "fp8 total=%d max_write=%d | EXCEEDS_BOUNDS=%s"
++                % (_B, num_tokens, int(num_blocks), int(block_size), int(head_dim),
++                   _max_bi, _nvalid, _total, _max_read, _fp8_total, _max_write,
++                   "YES" if _exceed else "no"),
++                flush=True)
++        except Exception as _e:  # noqa: BLE001
++            print("[DSA-GATHER-AUDIT] audit error: %r" % (_e,), flush=True)
+     _cp_gather_indexer_quant_cache_kernel[grid](
+         k_cache_value,
+         k_cache_scale,
+@@ -2221,8 +2266,11 @@
+     # [glm5-noaiter P3] fp8 KV: pass the per-tensor dequant scale to the kernel
+     # (only read when the cache dtype is fp8). A host-side scalar default keeps
+     # the bf16/fp16 path untouched.
++    # [glm5next-port-02] torch.tensor(1.0, device=...) performs a host->device
++    # copy that is illegal during CUDA-graph capture (P7 7d). Allocate the scalar
++    # directly on the device instead: no copy, capture-safe, same value.
+     if k_scale is None:
+-        k_scale = torch.tensor(1.0, dtype=torch.float32, device=q.device)
++        k_scale = torch.ones((), dtype=torch.float32, device=q.device)
+     k_scale = k_scale.contiguous()
+ 
+     num_queries, num_heads, head_dim = q.shape
