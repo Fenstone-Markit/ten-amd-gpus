@@ -1,0 +1,1 @@
+PASS prompt 116399 tokens, 6 out, in 41.2 s: want K2190, got 'K2190'

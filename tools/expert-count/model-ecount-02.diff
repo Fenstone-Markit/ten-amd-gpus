@@ -1,0 +1,32 @@
+--- model.py
++++ model.py
+@@ -107,6 +107,9 @@
+ # Glm5NextModel.forward when GLM5_DEBUG_DUMP is set AND
+ # GLM5_DEBUG_SUBLAYERS="i0-i1" selects an inclusive layer range; the decoder
+ # layer appends (layer_idx, tag, tensor) tuples for attn_in/attn_out/mlp_out.
++_GLM5_ECOUNT = os.environ.get("GLM5_EXPERT_COUNT", "0") == "1"   # [claude-ecount-02]
++if _GLM5_ECOUNT:
++    from vllm.v1.worker import glm5_ecount as _glm5_ec
+ _GLM5_SUBLAYER_DUMP: list | None = None
+ _GLM5_SUBLAYER_RANGE: tuple[int, int] = (-1, -1)
+ 
+@@ -206,6 +209,9 @@
+             )
+         else:
+             self.gate.e_score_correction_bias = None
++        if _GLM5_ECOUNT:
++            # [claude-ecount-02] counters for the read-only expert count
++            _glm5_ec.init(self, config.n_routed_experts, _glm5_ec.layer_of(prefix), config.num_experts_per_token)
+ 
+         # Load balancing settings.
+         eplb_config = parallel_config.eplb_config
+@@ -282,6 +288,9 @@
+         # The router is always external (self.gate); main's MoERunner expects
+         # pre-computed router_logits, so compute them here unconditionally.
+         router_logits, _ = self.gate(hidden_states)
++        if _GLM5_ECOUNT:
++            # [claude-ecount-02] count which experts GLM's routing rule picks; does not change the output
++            _glm5_ec.observe(self, router_logits, self.gate.e_score_correction_bias)
+         final_hidden_states = self.experts(
+             hidden_states=hidden_states, router_logits=router_logits
+         )

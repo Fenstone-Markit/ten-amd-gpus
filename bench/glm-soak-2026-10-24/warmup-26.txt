@@ -1,0 +1,7 @@
+PASS prompt 73 tokens in 131 s: want K5865, got 'K5865'
+PASS prompt 100 tokens in 1 s: want K1757, got 'K1757'
+PASS prompt 1819 tokens in 2 s: want K1410, got 'K1410'
+PASS prompt 8477 tokens in 5 s: want K4105, got 'K4105'
+PASS prompt 16290 tokens streamed+tool in 6 s: want K341, got 'K341'
+PASS prompt 32092 tokens in 11 s: want K657, got 'K657'
+WARMUP END

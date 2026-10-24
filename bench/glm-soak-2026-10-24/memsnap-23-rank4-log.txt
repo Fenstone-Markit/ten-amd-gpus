@@ -1,0 +1,12 @@
+1792826403.673 periodic rank4-periodic-0.pickle reserved 616562688 allocated 601291776 peak_allocated 601291776 peak_reserved 616562688 device_free 24490541056 total 25753026560 retries 0
+1792826408.704 periodic rank4-periodic-1.pickle reserved 616562688 allocated 601291776 peak_allocated 601291776 peak_reserved 616562688 device_free 24490541056 total 25753026560 retries 0
+1792826413.755 periodic rank4-periodic-0.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19141380096 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826418.795 periodic rank4-periodic-1.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826423.859 periodic rank4-periodic-0.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826428.920 periodic rank4-periodic-1.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826434.022 periodic rank4-periodic-0.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826439.134 periodic rank4-periodic-1.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826444.253 periodic rank4-periodic-0.pickle reserved 19151192064 allocated 19141380096 peak_allocated 19143477248 peak_reserved 19151192064 device_free 5955911680 total 25753026560 retries 0
+1792826451.498 periodic rank4-periodic-1.pickle reserved 19285409792 allocated 19277031936 peak_allocated 19277031936 peak_reserved 19285409792 device_free 5809111040 total 25753026560 retries 0
+1792826456.040 retry1 rank4-retry1.pickle reserved 24675090432 allocated 21846514688 peak_allocated 24572975616 peak_reserved 24886902784 device_free 0 total 25753026560 retries 1
+1792826457.017 retry2 rank4-retry2.pickle reserved 24675090432 allocated 21846514688 peak_allocated 24572975616 peak_reserved 24949817344 device_free 0 total 25753026560 retries 2

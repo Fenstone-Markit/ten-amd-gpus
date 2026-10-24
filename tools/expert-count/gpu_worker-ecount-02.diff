@@ -1,0 +1,42 @@
+--- gpu_worker.py
++++ gpu_worker.py
+@@ -1090,6 +1090,30 @@
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput:
+         return self.model_runner.sample_tokens(grammar_output)
+ 
++    def _glm5_ecount_poll(self):
++        # [claude-ecount-02] when GLM5_ECOUNT_DIR holds a file trigger-<tag> this worker has not handled, save this pipeline
++        # stage's expert counters (tensor-parallel rank 0 only: both ranks of a stage route identically) as <tag>-rank<R>.pt
++        from vllm.distributed import get_tensor_model_parallel_rank
++        if get_tensor_model_parallel_rank() != 0:
++            return
++        d = os.environ.get("GLM5_ECOUNT_DIR", "/cache/expert-count")
++        done = getattr(self, "_glm5_ec_done", None)
++        if done is None:
++            done = self._glm5_ec_done = set()
++        try:
++            tags = [f[8:] for f in os.listdir(d) if f.startswith("trigger-")]
++        except FileNotFoundError:
++            return
++        for tag in sorted(tags):
++            if tag in done:
++                continue
++            done.add(tag)
++            from vllm.v1.worker import glm5_ecount as _ec
++            torch.cuda.synchronize(self.device)
++            snap = _ec.snapshot(self.model_runner.model)
++            torch.save(snap, os.path.join(d, f"{tag}-rank{self.rank}.pt"))
++            logger.info("[GLM5_ECOUNT] saved %s: %d MoE layers on rank %d", tag, len(snap), self.rank)
++
+     @torch.inference_mode()
+     def _glm5_canary_check(self, where):
+         # [claude-canary-02] compare the four canary blocks with the last content seen; on a change
+@@ -1121,6 +1145,8 @@
+         self, scheduler_output: "SchedulerOutput"
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
+         self._glm5_canary_check("step-start")
++        if os.environ.get("GLM5_EXPERT_COUNT") == "1":
++            self._glm5_ecount_poll()
+         # ensure any previous non-blocking PP sends are complete
+         if self._pp_send_work:
+             for handle in self._pp_send_work:

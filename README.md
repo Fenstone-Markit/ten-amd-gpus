@@ -8,30 +8,31 @@ I am not a researcher. I run logistics for a living, I built this machine to do 
 wanted it faster. This repository is every wall I hit and how I got past it, measured on the machine
 and published as it goes, including the parts that turned out to be wrong.
 
-## The headline
+## Now: a 321B model runs my agent, on the same ten cards
 
-| On one 27B model, the one my agent runs on | Where I started | Where it is now |
+| GLM-5.3-Flash, 321B mixture of experts, 4-bit, my agent's brain since 2026-10-24 | Measured |
+| --- | --- |
+| Context window | **131,072 tokens** |
+| Reading a 116,399-token prompt | **41.2 s**, about 2,800 tok/s, answered correctly |
+| A 2-hour 18-minute soak of real kinds of work, two requests at a time | **1,042 of 1,065 right, no crash, no error** |
+| Tool calls in that soak, streamed or not | **204 of 204** |
+| Official support for these cards | none: the recipe covers one AMD chip, the MI355X |
+
+It runs through a community RDNA4 port, patches from me and my agent, and two things found the hard way. On a nearly full card, ROCm hands out memory a live buffer still owns, and the model's own start-up profiling of a vision encoder nobody here uses filled the middle cards to that edge. Serving text only gave back about 5 GiB on each middle card, and it has run without a fault since. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md), [Chapter 6](paper/06-the-memory-underneath.md), [Chapter 8](paper/08-serving-it.md)
+
+## Where it started: one 27B model
+
+| On one 27B model, my agent's brain until 2026-10-24 | Where I started | Where it got to |
 | --- | --- | --- |
 | Decode at 60,000 tokens of context | 4.59 tok/s | **145 to 162 tok/s** |
 | Decode at 16,000 tokens | 11.5 tok/s | **150 to 165 tok/s** |
 | Wait for the first word in a long conversation | 26.6 s | **0.6 s** |
 | My agent's real work, from the server's own counters, at an average of 104,000 tokens of context | not measured | **134 tok/s** |
-| The frozen quality rubric (Task 01) | | **8 of 10, passed in 2 turns, the best on record** |
+| The frozen quality rubric (Task 01) | no baseline | **8 of 10, passed in 2 turns, the best on record** |
 
 Same cards, same model, same weights, with the quantized multiplies at the precision floor. The speed
 range is speculative decoding: the more predictable the text, the more of its three draft tokens are
 accepted per step. **The silicon was never the limit. The tuning was.**
-
-## Now: a 321B model on the same ten cards
-
-| GLM-5.3-Flash, 321B mixture of experts, 4-bit | Measured |
-| --- | --- |
-| Context window | **131,072 tokens** |
-| Reading a 119,517-token prompt | **43.9 s**, about 2,700 tok/s, answered correctly |
-| Decode | **35 tok/s** |
-| Official support for these cards | none: the recipe covers one AMD chip, the MI355X |
-
-It runs through a community RDNA4 port and 14 patches of mine, and every window above 32,768 failed until one shortcut in that port was put back the way upstream does it. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md), [the port](patches/glm5next/README.md)
 
 ## To AMD: what you are leaving on the table
 
@@ -45,7 +46,8 @@ Every row below is a software change, measured on this machine. Most are a few l
 | An eight-card RDNA3 all-reduce: I extended [vLLM #57767](https://github.com/vllm-project/vllm/pull/57767) from two and four cards to eight | 3.8× faster than RCCL at decode size, exact on every card; 38 % faster decode end to end | [rc3](patches/rc3/README.md) |
 | Let the long-context attention path verify four tokens at once, not two (two lines) | Three draft tokens become nearly free: decode at 60K goes from 110 tok/s to between 145 and 162 | [rc3](patches/rc3/README.md) |
 | Fix QuickReduce for consumer cards, or compile it out of their image | Today it returns a wrong value in every element on this card | [2.2](paper/02b-the-speed-without-the-cost.md) |
-| A GLM-5.3-Flash path for RDNA, not only the MI355X | A 321B model at 131,072 tokens and 35 tok/s on ten consumer cards, through a community port | [5](paper/05-a-321b-model-on-ten-cards.md) |
+| A GLM-5.3-Flash path for RDNA, not only the MI355X | A 321B model serving 131,072 tokens on ten consumer cards, through a community port | [5](paper/05-a-321b-model-on-ten-cards.md), [8](paper/08-serving-it.md) |
+| Stop handing out memory that a live, mapped virtual-memory handle still owns | Live buffers overwritten in 2 MiB pages, with no error, whenever PyTorch releases memory on a nearly full card; a one-card test shows it in seconds | [6](paper/06-the-memory-underneath.md), [the test](tools/vmm-repro/README.md) |
 | An RDNA3 continuous-integration runner | Every defect in this repository shipped without one | all |
 
 With the defaults and settings in Chapters 1.2 and 1.3 and the rc3 patches, these took one model from
@@ -66,11 +68,14 @@ leaving it on the table.**
 - **A small model's missing knowledge cannot be prompted away, or searched away.** A family tutor on one card invented a game's ending under instructions not to, and again from search snippets; what worked was letting the small model decide, fetching full text, and having the 27B write. [Chapter 3](paper/03-a-tutor-on-one-card.md)
 - **A consumer NVMe drive can stop answering with its link healthy, and the model keeps serving from memory.** Chapter 4 blamed a sleep state; withdrawn: it hung again with every power-saving state off and a clean health log. [Chapter 4](paper/04-running-it.md), [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
 - **Every RX 7900 XTX reports x16, wherever it sits.** The real link is at the card's own upstream port: x8 on the switch, and x8 in an x16 slot on a damaged refurbished card. [Chapter 4](paper/04-running-it.md)
-- **A 321B model serves 131,072 tokens on ten consumer cards.** GLM-5.3-Flash reads a 120,000-token prompt in 44 s and decodes at 35 tok/s; llama.cpp reads the same model about 15 times slower. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
+- **A 321B model serves 131,072 tokens on ten consumer cards, and survives a 2-hour soak.** GLM-5.3-Flash read a 120,000-token prompt in 44 s and decoded at 35 tok/s in Chapter 5's tests; llama.cpp reads the same model about 15 times slower. It failed in service until Chapter 8. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md), [Chapter 8](paper/08-serving-it.md)
 - **One speed shortcut broke every window above 32,768, four different ways.** A wrong answer, a dead start-up, an error, a GPU crash: all from chunk counts built on the GPU. Building them on the CPU, as upstream does, fixed all four at no measurable cost. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
 - **On a nearly full card, memory handed back to ROCm can be given out again while a live buffer still owns it.** With PyTorch's expandable segments on ROCm 10, a buffer nothing writes to was overwritten in whole 2 MiB pages; a plain `hipMalloc` made after the release landed on it. Keeping released memory inside the process removes it on a one-card test. ROCm 7.2.4 looks clean only because released memory never comes back there. [Chapter 6](paper/06-the-memory-underneath.md), [the tests](tools/vmm-repro/README.md)
 - **A cache folder that cannot be written cost three kilowatts.** A model start ran ten cards at about 2,990 W for over two minutes without progress because AMD's convolution library could not save its tuning. [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
 - **One card's heat was its paste.** 110 C within seconds before a PTM7950 pad, 83 C after, at the same clock setting and power. A clock cap is a target, not a ceiling. [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
+- **About 5 GiB on each middle card went to profiling a vision encoder nothing here uses.** vLLM sizes memory for the largest input a model accepts, a dummy video for GLM. Serving text only gave it back, and that is what made GLM serve. [Chapter 8](paper/08-serving-it.md)
+- **Exact recall falls with length, even when nothing is broken.** 90 of 92 needles found below 10,000 tokens, 9 of 14 above 90,000, every miss a nearby line. [Chapter 8](paper/08-serving-it.md)
+- **Every expert gets used; kinds of work route differently.** Across seven kinds of work no expert went unused in any layer; medicine routes most like general knowledge, code most like agent work, Arabic and Urdu least like anything. Counted, not pruned. [Chapter 8](paper/08-serving-it.md), [the count](tools/expert-count/README.md)
 - **The stack carries to other models.** Seven models, from 2 cards to 8, ran on the same stack, and the all-reduce engaged in every run. 4-bit bought speed only on dense models. [Models](MODELS.md)
 
 ## Chapters
@@ -86,10 +91,11 @@ leaving it on the table.**
 | [2.2: The speed without the cost](paper/02b-the-speed-without-the-cost.md) | The fixed kernel, a correction to how 2.1 priced the cost, and a kernel that is wrong in every element |
 | [rc3: the all-reduce and the draft tokens](patches/rc3/README.md) | The eight-card all-reduce, a tuned kernel, and the attention change that made three draft tokens work. 76.4 to about 160 tok/s at 60K |
 | [3: A tutor on one refurbished card](paper/03-a-tutor-on-one-card.md) | A homework tutor for teenagers on one 24 GB card, over WhatsApp: what prompts could not fix, what search could not fix, and the split that did |
-| [4: Running it](paper/04-running-it.md) | A console built from real hardware, a drive that slept and did not wake, a card 18 degrees hotter than its neighbour, and a retraction |
+| [4: Running it](paper/04-running-it.md) | A console built from real hardware, a drive that stopped answering (its sleep-state explanation withdrawn in Chapter 7), a card 18 degrees hotter than its neighbour, and a retraction |
 | [5: A 321B model on ten consumer cards](paper/05-a-321b-model-on-ten-cards.md) | GLM-5.3-Flash with no official path: the window ladder, the bug behind 32,768, two withdrawn explanations, and moving the brain to two cards |
 | [6: The memory underneath](paper/06-the-memory-underneath.md) | Why GLM failed in service: a GPU code object inside the model's memory, a marked block overwritten only on full cards, a one-card test with no model, and what narrowed it down |
 | [7: Heat, a hang and a repaste](paper/07-heat-a-hang-and-a-repaste.md) | Clock caps that are not ceilings, a 27-degree repaste, a hang a power drain fixed, a start-up that burned three kilowatts doing nothing, and the system drive's fourth hang |
+| [8: Serving it](paper/08-serving-it.md) | How GLM came to serve: the vision encoder's 5 GiB, a backstop for the fault underneath, a 2-hour soak, and which experts each kind of work picks |
 
 ## Tools
 
@@ -110,7 +116,7 @@ leaving it on the table.**
 | Memory | 512 GB DDR4-3200 ECC, 8 channels |
 | Interconnect | PCIe Gen4 x8 to every card, through one PEX880xx Gen4 switch. No fabric |
 | Power and cooling | Multiple supplies on a 20 A 240 V circuit, open bench, garage |
-| The agent's model | `cyankiwi/Qwen3.8-27B-AWQ-INT4`, revision `6e134bae`; since 2026-10-17 on a second machine's two cards, so the ten are free for GLM-5.3-Flash |
+| The agent's model | `wtdcode/GLM-5.3-Flash-AWQ-W4A16`, revision `abd7b077`, on all ten cards since 2026-10-24. Before that `cyankiwi/Qwen3.8-27B-AWQ-INT4`, revision `6e134bae` |
 
 Every measurement names the container image it was taken on. After Chapter 1.1, a throughput number
 without an image tag is not a measurement.
@@ -119,13 +125,15 @@ without an image tag is not a measurement.
 
 Measured far enough that anyone can pick them up:
 
-- **Serving more than one user at once.** Every number here is one request at a time.
+- **Serving more than one user at once.** Every speed number here is one request at a time.
 - **Startup.** A warm restart takes about eight minutes, most of it re-timing kernels that were timed last time.
 - **The all-reduce fused with the norm**, and **an 8-bit conversation cache**: each worth single-digit percent, measured far enough to start.
 - **One kernel per multiply.** A fused version was correct but slower at two rows and up; the separate reduction pass stays.
 - **Precision on neutral text**, replacing the figure Chapter 2.2 withdrew.
 - **A harder evaluation task**, with tool access, that separates models above the floor Task 01 sets.
-- **A newer brain.** GLM-5.3-Flash serves 131,072 tokens on the ten cards; a long soak and a real agent session come before it replaces the 27B. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
+- **The memory fault itself.** GLM serves because the trigger is avoided; ROCm still hands out memory a live buffer owns after a release on a full card. [Chapter 6](paper/06-the-memory-underneath.md)
+- **GLM at 8 bits, and multi-token prediction.** These cards have no FP8 hardware; kernels that convert it on the fly are in progress. [Chapter 8](paper/08-serving-it.md)
+- **Exact recall above 90,000 tokens** (9 of 14), and decode speed with the serving recipe, not measured again since Chapter 5. [Chapter 8](paper/08-serving-it.md)
 - **The tutor's open items:** a real safety check on every answer, real homework photos, documents, and the 35B on two cards. [Chapter 3](paper/03-a-tutor-on-one-card.md)
 
 ## Corrections
