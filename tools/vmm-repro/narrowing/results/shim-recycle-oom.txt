@@ -1,0 +1,5 @@
+devices 1, AMD Radeon RX 7900 XTX, alloc conf: <torch.cuda.memory._CUDAAllocator object at 0x7730b3914050>
+SHIM active, mode 1, real fns found
+weights 22272 MiB; free 2042 MiB; headroom target 150 MiB; canary at 0x77245ce80000
+RESULT mode oom, headroom 150 MiB, 40 rounds in 0 s: 0 block hits, first at: None, OOM retries 40
+SHIM counts: create 1457 (real 1219, failed 80, from pool 158), release 160 (real 0), map 1217, unmap 0, pool left 2

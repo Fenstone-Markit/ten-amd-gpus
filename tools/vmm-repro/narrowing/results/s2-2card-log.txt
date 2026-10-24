@@ -1,0 +1,43 @@
+[hipmem-shim-02] pid 1 start (real functions found): mode log, torch creates 0 (real 0, failed 0, from pool 0), other creates 0, torch releases 0 (to runtime 0), other releases 0, live 0, pool 0, pool reuse by card:
+round 0 card 0: 13 buffers, free 118 MiB
+round 1 card 0: 13 buffers, free 118 MiB
+round 2 card 1: 13 buffers, free 118 MiB
+round 3 card 1: 13 buffers, free 118 MiB
+round 4 card 0: 13 buffers, free 118 MiB
+round 5 card 0: 13 buffers, free 118 MiB
+round 6 card 1: 13 buffers, free 118 MiB
+round 7 card 1: 13 buffers, free 118 MiB
+round 8 card 0: 13 buffers, free 118 MiB
+round 9 card 0: 13 buffers, free 118 MiB
+round 10 card 1: 13 buffers, free 118 MiB
+round 11 card 1: 13 buffers, free 118 MiB
+round 12 card 0: 13 buffers, free 118 MiB
+round 13 card 0: 13 buffers, free 118 MiB
+round 14 card 1: 13 buffers, free 118 MiB
+round 15 card 1: 13 buffers, free 118 MiB
+round 16 card 0: 13 buffers, free 118 MiB
+round 17 card 0: 13 buffers, free 118 MiB
+round 18 card 1: 13 buffers, free 118 MiB
+round 19 card 1: 13 buffers, free 118 MiB
+round 20 card 0: 13 buffers, free 118 MiB
+round 21 card 0: 13 buffers, free 118 MiB
+round 22 card 1: 13 buffers, free 118 MiB
+round 23 card 1: 13 buffers, free 118 MiB
+round 24 card 0: 13 buffers, free 118 MiB
+round 25 card 0: 13 buffers, free 118 MiB
+round 26 card 1: 13 buffers, free 118 MiB
+round 27 card 1: 13 buffers, free 118 MiB
+round 28 card 0: 13 buffers, free 118 MiB
+round 29 card 0: 13 buffers, free 118 MiB
+round 30 card 1: 13 buffers, free 118 MiB
+round 31 card 1: 13 buffers, free 118 MiB
+round 32 card 0: 13 buffers, free 118 MiB
+round 33 card 0: 13 buffers, free 118 MiB
+round 34 card 1: 13 buffers, free 118 MiB
+round 35 card 1: 13 buffers, free 118 MiB
+round 36 card 0: 13 buffers, free 118 MiB
+round 37 card 0: 13 buffers, free 118 MiB
+round 38 card 1: 13 buffers, free 118 MiB
+round 39 card 1: 13 buffers, free 118 MiB
+RESULT two cards, fixed 1892 MiB per round, 40 rounds: 0 block hits, OOM 0
+[hipmem-shim-02] pid 1 exit: mode log, torch creates 4191 (real 4191, failed 0, from pool 0), other creates 0, torch releases 1931 (to runtime 1931), other releases 0, live 2260, pool 0, pool reuse by card:

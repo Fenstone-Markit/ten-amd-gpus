@@ -1,0 +1,4 @@
+reserve 27630 MiB at 0x769400e00000 (trace 0x769400e00000)
+reserve 27640 MiB at 0x768d3ae00000 (trace 0x768d3ae00000)
+ballast 0 MiB in 0 pieces at trace line 2804, free now 14 MiB
+RESULT replayed 11314 calls, 4791 checks: hits seen at A 0, at B 0; creates that differed from the trace 28; handles skipped 0

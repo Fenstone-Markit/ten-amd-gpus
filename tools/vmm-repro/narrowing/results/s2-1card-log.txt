@@ -1,0 +1,65 @@
+2.12.0+rocm10.0.0 7.15.26333
+[hipmem-shim-02] pid 1 start (real functions found): mode log, torch creates 0 (real 0, failed 0, from pool 0), other creates 0, torch releases 0 (to runtime 0), other releases 0, live 0, pool 0, pool reuse by card:
+weights 22272 MiB, free 2042 MiB
+round 0: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 1: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 2: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 3: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 4 full block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 4: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 5: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 6: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 7 full block 3: 131072 words, first bytes 36be35bff9bf6abf5a3f5fbf323ffabf
+round 7: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 8 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 8: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 9: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 10: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 11 full block 3: 131072 words, first bytes bdbebf3d9c3debbf00bfdabe463dfbbf
+round 11: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 11 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 12: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 13: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 14: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 15 full block 3: 131072 words, first bytes 57bf64bf15be123fc4bf1abf913fb7be
+round 15: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 16 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 16: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 17: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 18: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 19 full block 3: 131072 words, first bytes dabf0dbfedbfec3f2ebff73e65bfb1bb
+round 19: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 19 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 20: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 21: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 22: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 23 full block 3: 131072 words, first bytes aa3f313ffebe313cc53e153f72bf2dbf
+round 23: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 24 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 24: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 25: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 26: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 27 full block 3: 131072 words, first bytes 52bec9bfcfbeab3f66bf28bf05bfc83f
+round 27: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 28: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 29: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 30: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 31 full block 3: 131072 words, first bytes 2d3c363dc33fba3d06bf69bf2cbf6c3d
+round 31: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 32: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 33 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 33: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 34: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 35 full block 3: 131072 words, first bytes bbbe19bdeebeddbe163ffa3f8f3f313f
+round 35: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 36: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 37 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 37: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 38: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 39 full block 3: 131072 words, first bytes cc3e283d1bbfd23b6fbf773fb03f463f
+round 39: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+RESULT fixed 1892 MiB per round, 40 rounds: 20 block hits, OOM 0
+[hipmem-shim-02] pid 1 exit: mode log, torch creates 3494 (real 3466, failed 28, from pool 0), other creates 0, torch releases 2320 (to runtime 2320), other releases 0, live 1146, pool 0, pool reuse by card:

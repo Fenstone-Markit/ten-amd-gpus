@@ -1,0 +1,171 @@
+2.12.0+rocm10.0.0 7.15.26333
+[hipmem-watch-01] active, real functions found
+[hipmem-watch-01] watching first map 0x7c0dbce00000 +2097152 handle 0x20677d50
+weights 22272 MiB, free 2042 MiB
+round 0: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 1: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 2: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 3: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 4 full block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 4: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 5 full block 0: 131072 words, first bytes 77bec33f29c045bf5a3fb63f52bea93f
+HIT round 5 full block 1: 131072 words, first bytes 5bbdc6bebabf883f473efebf1fbeedbf
+HIT round 5 full block 2: 131072 words, first bytes 2b3f483fc4bf0cbf8cbf4e3fba3ec9be
+HIT round 5 full block 3: 131072 words, first bytes ecbfcbbfdb3de3bf733ef7bf663e2a3e
+round 5: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 6 full block 0: 131072 words, first bytes e0bf2c3f1c3e37be9c3f11be163f53bd
+HIT round 6 full block 1: 131072 words, first bytes a1bcbcbe213f94bf1a4017bfeb3f31bf
+HIT round 6 full block 2: 131072 words, first bytes a8bf5ebf393fd93fc6bf28c072bf9fbf
+HIT round 6 full block 3: 131072 words, first bytes 4e3fda3ed63e19c089be823e8cbf7dbf
+round 6: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 7 full block 0: 131072 words, first bytes 2ebf9abff73e37bf28c0d63f6f3f3bbf
+HIT round 7 full block 1: 131072 words, first bytes 9e3f92bef6bf263f253f46bf72bf9e3e
+HIT round 7 full block 2: 131072 words, first bytes e93d5f3f9b3f303fa3bfafbed03e8cbf
+HIT round 7 full block 3: 131072 words, first bytes ca3e8f3ef43e8fbe44bea4bd97bfc43e
+round 7: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 7 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 8 full block 0: 131072 words, first bytes 0cc0573fa2bea73fe73ff33e8dbdbd3f
+HIT round 8 full block 1: 131072 words, first bytes c43f3a3e84be68bf01bf653cb8bfaa3e
+HIT round 8 full block 2: 131072 words, first bytes d2beddbc4d4020bec73e823f30bf83bf
+HIT round 8 full block 3: 131072 words, first bytes 00bfad3fee3e1e3f06be1fbea7bf06be
+round 8: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 9 full block 0: 131072 words, first bytes 7dbf573e8abebebfd2bea03e1dbe053f
+HIT round 9 full block 1: 131072 words, first bytes 10bf3fbe3b3f8b3f5b3fbbbf6d3e2bc0
+HIT round 9 full block 2: 131072 words, first bytes b2be98be57bd9dbf3ebf3fbe863e9abf
+HIT round 9 full block 3: 131072 words, first bytes 25bd56bf89bf8e3f49bfef3e7abf1bbf
+round 9: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 9 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 9 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 9 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 10 full block 0: 131072 words, first bytes 8b3f503f9d3efd3fd1be98bfdcbea4bf
+HIT round 10 full block 1: 131072 words, first bytes e53c613e1ac0743e973fb2bfac3f39be
+HIT round 10 full block 2: 131072 words, first bytes 35bffb3f14bf0a400b3ecdbe07c00140
+HIT round 10 full block 3: 131072 words, first bytes b33e473eca3f37bb40c098bf3a3f8bbe
+round 10: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 11 full block 0: 131072 words, first bytes 4a3fb23e593eb8bf37be97beaabf1440
+HIT round 11 full block 1: 131072 words, first bytes 7ebf4b3e32bebe3e093c123f09c0933f
+HIT round 11 full block 2: 131072 words, first bytes 993f403f08becd3fe5bea6bf8cbf933f
+HIT round 11 full block 3: 131072 words, first bytes a73fdebf113fb73d383f05bf583f16c0
+round 11: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 11 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 12 full block 0: 131072 words, first bytes 893fdc3f323f3dbfd73fe5becd3f3fbe
+HIT round 12 full block 1: 131072 words, first bytes ebbf4abf983e8b3fa43eadbfdfbe39c0
+HIT round 12 full block 2: 131072 words, first bytes 8abe123f81befa3e363eab3e65bf593f
+HIT round 12 full block 3: 131072 words, first bytes 22bf4f3f1ebf863e1b403ac0103f5a3f
+round 12: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 13 full block 0: 131072 words, first bytes 82bf143fd2bf81bf153ed3bf913e69bf
+HIT round 13 full block 1: 131071 words, first bytes edbfdf3f55bf44be1e3f96bc3f40223f
+HIT round 13 full block 2: 131072 words, first bytes 85bc383f913fd23feb3e4ebf6a3e5e3f
+HIT round 13 full block 3: 131072 words, first bytes e4bf1e3e133e1e3f4d3d9dbf633fa93f
+round 13: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 13 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 13 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 13 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 14 full block 0: 131072 words, first bytes b83e813fa1bfb4bdcebf973f923f54bf
+HIT round 14 full block 1: 131072 words, first bytes fd3e06bf87be643d98be293f99be1240
+HIT round 14 full block 2: 131072 words, first bytes 843f483cab3e20bc0f3eb53f9b3e1fbf
+HIT round 14 full block 3: 131071 words, first bytes 6a3eb03fb23f9a3fc43e8f3fe4bd0b3f
+round 14: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 15 full block 0: 131072 words, first bytes fabfdf3f4b3f5eba09bf41bc583e5ebf
+HIT round 15 full block 1: 131070 words, first bytes 9a3fc43fa0be113f473f12be59bfe63d
+HIT round 15 full block 2: 131071 words, first bytes ce3e27bc16bfc3be9cbfe53e2abf50be
+HIT round 15 full block 3: 131072 words, first bytes a5bf1a3f99bf66be993f693fd63f15bf
+round 15: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 15 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 16 full block 0: 131072 words, first bytes 40bfd9beabbfd23f343f003f5f3e74be
+HIT round 16 full block 1: 131072 words, first bytes 4b3f343f813e933ff73f2a3fafbf0dbe
+HIT round 16 full block 2: 131072 words, first bytes 273d0dbff8be03c003bfc83f003f3fbf
+HIT round 16 full block 3: 131072 words, first bytes a83f90bf673fedbe5d3f52bdc73ff23f
+round 16: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 17 full block 0: 131072 words, first bytes 01bfdb3fdebfd73fd7be08403f3e01bf
+HIT round 17 full block 1: 131072 words, first bytes f93dcf3f81bf8abe4dbd2340cdbf5840
+HIT round 17 full block 2: 131072 words, first bytes 903f84bffbbecebe91be863f10be973f
+HIT round 17 full block 3: 131072 words, first bytes 903fa8bfa0bc613f253ff8bd573e1fbf
+round 17: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 17 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 18 full block 0: 131072 words, first bytes 143e6abf89bf41406e3f523f143b933f
+HIT round 18 full block 1: 131072 words, first bytes 2ac0ce3fa03e0ebf4e3d2e3f8fbf2f3f
+HIT round 18 full block 2: 131072 words, first bytes e03e433f133e673fc43dc13febbeeb3e
+HIT round 18 full block 3: 131072 words, first bytes babdb33fd1bec73e08bd5f3f67bf803f
+round 18: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 19 full block 0: 131072 words, first bytes adbe523f853f493d5dbf68bf233d72be
+HIT round 19 full block 1: 131072 words, first bytes 0a3f9dbfb93e8ebf623fa2bf244063bf
+HIT round 19 full block 2: 131072 words, first bytes bdbd15bfc5beddbfb13ed13f133f3dbf
+HIT round 19 full block 3: 131072 words, first bytes afbf803e723ed63fa5be9fbe043f30bf
+round 19: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 19 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 19 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 19 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 19 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 20 full block 0: 131072 words, first bytes 703f09bf6dbfd83f3a3f38beb63f923f
+HIT round 20 full block 1: 131072 words, first bytes 92bf493f62bf46bf2bbf823ea0bf73be
+HIT round 20 full block 2: 131072 words, first bytes 8ebf263f5abea43ec2bf80bdda3eacbf
+HIT round 20 full block 3: 131072 words, first bytes e6bf013e053f4e3fffbf323f693eab3e
+round 20: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 21 full block 0: 131072 words, first bytes 1d3e3fbe1a3e893fcd3f1d4020be96bd
+HIT round 21 full block 1: 131071 words, first bytes c4bfc43f923e8f3efabf42bfa0bf2a3e
+HIT round 21 full block 2: 131072 words, first bytes d43fa9bfe93ed1be084037bf6f3ff8bf
+HIT round 21 full block 3: 131072 words, first bytes a3be01bf523e0ebe43bee9be603d14bf
+round 21: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 21 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 21 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 21 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 22 full block 0: 131072 words, first bytes 483ed03fb8be50bf79bf7cbf923f82bd
+HIT round 22 full block 1: 131072 words, first bytes 57bf4cbf40bffebc25bf07bf5e3effbe
+HIT round 22 full block 2: 131072 words, first bytes e83ec03d8fbf57bf0e3f563f02bf50bf
+HIT round 22 full block 3: 131071 words, first bytes 8b3fb1bfbebda8be22bf813ee1bea7be
+round 22: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 23 full block 0: 131072 words, first bytes 943f20c042bf18bfcfbf2e3eae3c323f
+HIT round 23 full block 1: 131071 words, first bytes 41bfa13f8ebe723d623d38be9d3ed43e
+HIT round 23 full block 2: 131072 words, first bytes 833f5cbe59bf6ebf19bebabec2bfa23f
+HIT round 23 full block 3: 131072 words, first bytes 0ebfd23e7abe4e3f9bbff73edfbf973e
+round 23: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 23 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 23 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 23 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 24 full block 0: 131072 words, first bytes 76bf29bf8f3e6d3e5cbc823e1840763f
+HIT round 24 full block 1: 131072 words, first bytes 96bf29bf963ea1bd9fbf8d3f1c3f9d3d
+HIT round 24 full block 2: 131072 words, first bytes a63d85bf263f9cbfbf3ecfbfb13f01c0
+HIT round 24 full block 3: 131071 words, first bytes 653f5cbf4dbe07bf85bfe33e9cbdb93e
+round 24: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 25: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 25 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 25 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 25 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 26 full block 3: 131072 words, first bytes b7bf06bf21bfe1bde83f113fb8bfd7bf
+round 26: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 27 full block 3: 131072 words, first bytes debf96bd84bf103fbd3fd9be0bbf34bf
+round 27: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 28 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 28: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 29: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 30 full block 3: 131072 words, first bytes 40bec93ddfbe93bf113f393d943ea03f
+round 30: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 31 full block 3: 131072 words, first bytes 11404a3f8ebf663fa4be553e2a3fc1bf
+round 31: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 32 full block 3: 131072 words, first bytes 98bf0dc06bbf04bf06bd583f17bfed3f
+round 32: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 33 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 33: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 34 full block 3: 131072 words, first bytes 0abfe1bf283f0fbf353f9cbf4b3fa7bf
+round 34: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 35 full block 3: 131072 words, first bytes fcbdf83e3cbf96bf6e3e303f8cbfd3be
+round 35: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 36 full block 3: 131072 words, first bytes b4bdb63e84bfb7bfb0bec43e343fc93d
+round 36: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 37 full block 3: 131072 words, first bytes 00000000000000000000000000000000
+round 37: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 38 full block 3: 131072 words, first bytes 7a3fb2be64be5bbe5cbf26bf42c0a2bf
+round 38: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+HIT round 39 full block 3: 131072 words, first bytes 2fbf0b3f6abe0bbe9f3ebf3fbbbf103f
+round 39: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+RESULT fixed 1892 MiB per round, 40 rounds: 125 block hits, OOM 0
+[hipmem-watch-01] counts: create 3494, release 2320, map 3226, unmap 2080; watched page 0x7c0dbce00000-0x7c0dbd000000 (handle 0x20677d50, 2097152 bytes): unmaps overlapping it 0, releases of its handle 0, other handles mapped onto it 0

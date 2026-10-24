@@ -1,0 +1,3 @@
+HIP runtime 71526333, granularity 4096 bytes, handle type 1, free 24486 MiB
+weights 1107 pages (22140 MiB), free 2198 MiB
+RESULT 40 rounds, headroom 150 MiB, handle type 1: hits seen at A 0, at B 0; failed creates 0

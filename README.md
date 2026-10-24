@@ -64,10 +64,13 @@ leaving it on the table.**
 - **Draft tokens are nearly free once attention can verify several at once.** Each extra one costs about 0.7 ms per step. [rc3](patches/rc3/README.md)
 - **Speed did not cost quality.** After every change above, the agent's model scored 8 of 10 on the frozen rubric and fixed both defects from evidence alone. [tasks/](tasks/)
 - **A small model's missing knowledge cannot be prompted away, or searched away.** A family tutor on one card invented a game's ending under instructions not to, and again from search snippets; what worked was letting the small model decide, fetching full text, and having the 27B write. [Chapter 3](paper/03-a-tutor-on-one-card.md)
-- **A consumer NVMe drive can fall asleep and not wake.** The system drive's controller stopped answering with its link healthy; the model kept serving from memory. Its deepest sleep state is now off. [Chapter 4](paper/04-running-it.md)
+- **A consumer NVMe drive can stop answering with its link healthy, and the model keeps serving from memory.** Chapter 4 blamed a sleep state; withdrawn: it hung again with every power-saving state off and a clean health log. [Chapter 4](paper/04-running-it.md), [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
 - **Every RX 7900 XTX reports x16, wherever it sits.** The real link is at the card's own upstream port: x8 on the switch, and x8 in an x16 slot on a damaged refurbished card. [Chapter 4](paper/04-running-it.md)
 - **A 321B model serves 131,072 tokens on ten consumer cards.** GLM-5.3-Flash reads a 120,000-token prompt in 44 s and decodes at 35 tok/s; llama.cpp reads the same model about 15 times slower. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
 - **One speed shortcut broke every window above 32,768, four different ways.** A wrong answer, a dead start-up, an error, a GPU crash: all from chunk counts built on the GPU. Building them on the CPU, as upstream does, fixed all four at no measurable cost. [Chapter 5](paper/05-a-321b-model-on-ten-cards.md)
+- **On a nearly full card, memory handed back to ROCm can be given out again while a live buffer still owns it.** With PyTorch's expandable segments on ROCm 10, a buffer nothing writes to was overwritten in whole 2 MiB pages; a plain `hipMalloc` made after the release landed on it. Keeping released memory inside the process removes it on a one-card test. ROCm 7.2.4 looks clean only because released memory never comes back there. [Chapter 6](paper/06-the-memory-underneath.md), [the tests](tools/vmm-repro/README.md)
+- **A cache folder that cannot be written cost three kilowatts.** A model start ran ten cards at about 2,990 W for over two minutes without progress because AMD's convolution library could not save its tuning. [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
+- **One card's heat was its paste.** 110 C within seconds before a PTM7950 pad, 83 C after, at the same clock setting and power. A clock cap is a target, not a ceiling. [Chapter 7](paper/07-heat-a-hang-and-a-repaste.md)
 - **The stack carries to other models.** Seven models, from 2 cards to 8, ran on the same stack, and the all-reduce engaged in every run. 4-bit bought speed only on dense models. [Models](MODELS.md)
 
 ## Chapters
@@ -85,6 +88,8 @@ leaving it on the table.**
 | [3: A tutor on one refurbished card](paper/03-a-tutor-on-one-card.md) | A homework tutor for teenagers on one 24 GB card, over WhatsApp: what prompts could not fix, what search could not fix, and the split that did |
 | [4: Running it](paper/04-running-it.md) | A console built from real hardware, a drive that slept and did not wake, a card 18 degrees hotter than its neighbour, and a retraction |
 | [5: A 321B model on ten consumer cards](paper/05-a-321b-model-on-ten-cards.md) | GLM-5.3-Flash with no official path: the window ladder, the bug behind 32,768, two withdrawn explanations, and moving the brain to two cards |
+| [6: The memory underneath](paper/06-the-memory-underneath.md) | Why GLM failed in service: a GPU code object inside the model's memory, a marked block overwritten only on full cards, a one-card test with no model, and what narrowed it down |
+| [7: Heat, a hang and a repaste](paper/07-heat-a-hang-and-a-repaste.md) | Clock caps that are not ceilings, a 27-degree repaste, a hang a power drain fixed, a start-up that burned three kilowatts doing nothing, and the system drive's fourth hang |
 
 ## Tools
 
@@ -134,6 +139,9 @@ Wanted, particularly on anything here that is wrong. Withdrawals are recorded in
 | Chapter 1.2, knobs that did not work (and Chapter 2.1, which repeats it) | Speculative decoding: slower at four cards with the Triton kernel, 35 % faster at eight with the fixed kernel | Chapter 1.3 |
 | Chapter 2.1, Finding 4 | The 0.2 % perplexity cost was measured on production's own text, which favours production | Chapter 2.2 |
 | This README's earlier headline | 40.7 tok/s carried the precision cost of Chapter 2.1 without saying so | Chapter 2.2 |
+| Chapter 4, the drive | A sleep state blamed for the system drive's hang; it hangs with every power-saving state off | Chapter 7 |
+| Chapter 5, "serves 131,072 tokens" | Held in tests, not in service; the CPU-built chunk counts hid an outside overwrite rather than fixing it | Chapter 6 |
+| Chapter 6, findings 5 to 7 | Which step triggers the overwrite, what ROCm 7.2 shows, and whether anything avoids it | Chapter 6, in place |
 
 Open an issue.
 

@@ -1,0 +1,2 @@
+hip_5.1 { global: hipMemMap; local: *; };
+WATCH { global: hipmem_watch_a; hipmem_watch_b; hipmem_watch_size; };

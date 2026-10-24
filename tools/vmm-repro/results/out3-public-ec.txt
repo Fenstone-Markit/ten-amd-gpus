@@ -1,0 +1,6 @@
+devices 1, AMD Radeon RX 7900 XTX, alloc conf: <torch.cuda.memory._CUDAAllocator object at 0x7f4c901cc050>
+weights 22272 MiB; free 2042 MiB; headroom target 150 MiB; canary at 0x7f4038e80000
+HIT round 38 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 38 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 38 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+RESULT mode ec, headroom 150 MiB, 40 rounds in 1 s: 3 block hits, first at: round 38 full (13 buffers, free 118 MiB), OOM retries 0

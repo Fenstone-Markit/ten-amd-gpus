@@ -1,0 +1,56 @@
+[hipmem-shim-02] pid 1 start (real functions found): mode recycle, torch creates 0 (real 0, failed 0, from pool 0), other creates 0, torch releases 0 (to runtime 0), other releases 0, live 0, pool 0, pool reuse by card:
+round 0 card 0: 13 buffers, free 118 MiB
+round 1 card 0: 13 buffers, free 118 MiB
+round 2 card 1: 13 buffers, free 118 MiB
+round 3 card 1: 13 buffers, free 118 MiB
+round 4 card 0: 13 buffers, free 118 MiB
+round 5 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 2525 (real 2426, failed 0, from pool 99), other creates 0, torch releases 256 (to runtime 0), other releases 0, live 2269, pool 157, pool reuse by card: 0=98 1=1
+round 6 card 1: 13 buffers, free 118 MiB
+round 7 card 1: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 2682 (real 2426, failed 0, from pool 256), other creates 0, torch releases 363 (to runtime 0), other releases 0, live 2319, pool 107, pool reuse by card: 0=157 1=99
+round 8 card 0: 13 buffers, free 118 MiB
+round 9 card 0: 13 buffers, free 118 MiB
+round 10 card 1: 13 buffers, free 118 MiB
+round 11 card 1: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 2819 (real 2426, failed 0, from pool 393), other creates 0, torch releases 512 (to runtime 0), other releases 0, live 2307, pool 119, pool reuse by card: 0=196 1=197
+round 12 card 0: 13 buffers, free 118 MiB
+round 13 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 2938 (real 2426, failed 0, from pool 512), other creates 0, torch releases 657 (to runtime 0), other releases 0, live 2281, pool 145, pool reuse by card: 0=294 1=218
+round 14 card 1: 13 buffers, free 118 MiB
+round 15 card 1: 13 buffers, free 118 MiB
+round 16 card 0: 13 buffers, free 118 MiB
+round 17 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3113 (real 2426, failed 0, from pool 687), other creates 0, torch releases 768 (to runtime 0), other releases 0, live 2345, pool 81, pool reuse by card: 0=392 1=295
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3194 (real 2426, failed 0, from pool 768), other creates 0, torch releases 853 (to runtime 0), other releases 0, live 2341, pool 85, pool reuse by card: 0=392 1=376
+round 18 card 1: 13 buffers, free 118 MiB
+round 19 card 1: 13 buffers, free 118 MiB
+round 20 card 0: 13 buffers, free 118 MiB
+round 21 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3309 (real 2426, failed 0, from pool 883), other creates 0, torch releases 1024 (to runtime 0), other releases 0, live 2285, pool 141, pool reuse by card: 0=490 1=393
+round 22 card 1: 13 buffers, free 118 MiB
+round 23 card 1: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3450 (real 2426, failed 0, from pool 1024), other creates 0, torch releases 1147 (to runtime 0), other releases 0, live 2303, pool 123, pool reuse by card: 0=533 1=491
+round 24 card 0: 13 buffers, free 118 MiB
+round 25 card 0: 13 buffers, free 118 MiB
+round 26 card 1: 13 buffers, free 118 MiB
+round 27 card 1: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3603 (real 2426, failed 0, from pool 1177), other creates 0, torch releases 1280 (to runtime 0), other releases 0, live 2323, pool 103, pool reuse by card: 0=588 1=589
+round 28 card 0: 13 buffers, free 118 MiB
+round 29 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3706 (real 2426, failed 0, from pool 1280), other creates 0, torch releases 1441 (to runtime 0), other releases 0, live 2265, pool 161, pool reuse by card: 0=686 1=594
+round 30 card 1: 13 buffers, free 118 MiB
+round 31 card 1: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3799 (real 2426, failed 0, from pool 1373), other creates 0, torch releases 1536 (to runtime 0), other releases 0, live 2263, pool 163, pool reuse by card: 0=686 1=687
+round 32 card 0: 13 buffers, free 118 MiB
+round 33 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 3962 (real 2426, failed 0, from pool 1536), other creates 0, torch releases 1637 (to runtime 0), other releases 0, live 2325, pool 101, pool reuse by card: 0=784 1=752
+round 34 card 1: 13 buffers, free 118 MiB
+round 35 card 1: 13 buffers, free 118 MiB
+round 36 card 0: 13 buffers, free 118 MiB
+round 37 card 0: 13 buffers, free 118 MiB
+[hipmem-shim-02] pid 1 progress: mode recycle, torch creates 4093 (real 2426, failed 0, from pool 1667), other creates 0, torch releases 1792 (to runtime 0), other releases 0, live 2301, pool 125, pool reuse by card: 0=882 1=785
+round 38 card 1: 13 buffers, free 118 MiB
+round 39 card 1: 13 buffers, free 118 MiB
+RESULT two cards, fixed 1892 MiB per round, 40 rounds: 0 block hits, OOM 0
+[hipmem-shim-02] pid 1 exit: mode recycle, torch creates 4191 (real 2426, failed 0, from pool 1765), other creates 0, torch releases 1931 (to runtime 0), other releases 0, live 2260, pool 166, pool reuse by card: 0=882 1=883

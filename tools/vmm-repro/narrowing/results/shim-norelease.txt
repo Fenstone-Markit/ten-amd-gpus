@@ -1,0 +1,45 @@
+2.12.0+rocm10.0.0 7.15.26333
+SHIM active, mode 2, real fns found
+weights 22272 MiB, free 2042 MiB
+round 0: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 1: 13 buffers 1916 MiB, free 118 MiB, reserved 24206 MiB
+round 2: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 3: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 4: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 5: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 6: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 7: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 8: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 9: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 10: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 11: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 12: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 13: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 14: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 15: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 16: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 17: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 18: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 19: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 20: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 21: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 22: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 23: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 24: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 25: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 26: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 27: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 28: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 29: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 30: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 31: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 32: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 33: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 34: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 35: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 36: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 37: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 38: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+round 39: 0 buffers 0 MiB, free 0 MiB, reserved 22884 MiB
+RESULT fixed 1892 MiB per round, 40 rounds: 0 block hits, OOM 38
+SHIM counts: create 1295 (real 1219, failed 76, from pool 0), release 73 (real 0), map 1213, unmap 67, pool left 0

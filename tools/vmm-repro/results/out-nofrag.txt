@@ -1,0 +1,15 @@
+devices 1, AMD Radeon RX 7900 XTX, alloc conf: <torch.cuda.memory._CUDAAllocator object at 0x746d27cf0050>
+weights 22272 MiB; free 2042 MiB; headroom target 150 MiB; canary at 0x7460d0e80000
+HIT round 8 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes f3bd883f953f8fbfa7bff4bffcbeb4bd
+HIT round 8 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 2abf503fadbe01bf383f593fc83e7cbf
+HIT round 8 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 66bf203e383f933f0ebeabbff03eb4bf
+HIT round 8 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 573f003ff33f9e3d93bf86bf60bfaabf
+HIT round 10 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes c3bf18bf9bbf0abf36be4abf8fbfa93f
+HIT round 10 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 96be8fbf26bf44bf0c3fe7bf27bea23f
+HIT round 10 full (13 buffers, free 118 MiB) block 2: 131071 of 131072 words changed, first bytes 3dbfe2bfbc3e1ebff43f163f913f91bf
+HIT round 10 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 0640d53f073d883f03bfb8bf82be9bbf
+HIT round 11 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 3: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+RESULT headroom 150 MiB, 40 rounds in 1 s: 12 block hits, first at: round 8 full (13 buffers, free 118 MiB), OOM retries 0

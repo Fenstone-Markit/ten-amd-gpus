@@ -1,0 +1,51 @@
+devices 1, AMD Radeon RX 7900 XTX, alloc conf: <torch.cuda.memory._CUDAAllocator object at 0x72dce01ac050>
+weights 22272 MiB; free 2042 MiB; headroom target 150 MiB; canary at 0x72d088e80000
+HIT round 8 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes f3bd883f953f8fbfa7bff4bffcbeb4bd
+HIT round 8 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 2abf503fadbe01bf383f593fc83e7cbf
+HIT round 8 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 66bf203e383f933f0ebeabbff03eb4bf
+HIT round 8 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 573f003ff33f9e3d93bf86bf60bfaabf
+HIT round 10 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes c3bf18bf9bbf0abf36be4abf8fbfa93f
+HIT round 10 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 96be8fbf26bf44bf0c3fe7bf27bea23f
+HIT round 10 full (13 buffers, free 118 MiB) block 2: 131071 of 131072 words changed, first bytes 3dbfe2bfbc3e1ebff43f163f913f91bf
+HIT round 10 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 0640d53f073d883f03bfb8bf82be9bbf
+HIT round 11 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 11 freed block 3: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 18 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes edbf33bfcebfaebe143fe5beb33f9cbe
+HIT round 18 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 72bfe9bfdd3da5bf82bf5f3f12bf8a3f
+HIT round 18 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 55bfe23d433e7ebf5e3df1bf37bf9ebd
+HIT round 18 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 833ec1bf5dbf5d3f6b3f643e30be69bf
+HIT round 19 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 19 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 19 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 20 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes 71be31bf3c3fb53fabbe034058be143f
+HIT round 20 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 7dbf0bbf02c0f93f0ebff9bed43e0f40
+HIT round 20 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes da3f543f763fe53ebf3fc7be22bfb63d
+HIT round 20 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes ad3fcabfcabf8fbf3e3fad3f6a3f68bf
+HIT round 21 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 21 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 21 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 23 freed block 3: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 28 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes 95bf12c0843ee53f013e93bf763f91bf
+HIT round 28 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 13bf95bee93f343f553f78bf7b3f25c0
+HIT round 28 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 3fbe963faebee53e263f18bf5e3e043f
+HIT round 28 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 8f3d21c004bf103fcd3cddbede3faebe
+HIT round 29 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 29 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 30 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes 173ea93f803fb53e4e3f31bf1dbe6c3d
+HIT round 30 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes bbbf47bde6bece3fe83faf3d793f39bd
+HIT round 30 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes fdbf4e40b3be283f703ed0bff8bec1bf
+HIT round 30 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 233ff13f9f3f2cbeb33d89be383da1bf
+HIT round 31 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 31 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 31 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 33 freed block 3: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 38 full (13 buffers, free 118 MiB) block 0: 131072 of 131072 words changed, first bytes 603f7bbe19bf473f183fbf3f573e953f
+HIT round 38 full (13 buffers, free 118 MiB) block 1: 131072 of 131072 words changed, first bytes 2a3fa2bf52bf603ff63ea43f8ebe0abf
+HIT round 38 full (13 buffers, free 118 MiB) block 2: 131072 of 131072 words changed, first bytes 28bfcabf4cbefe3f1c3f22bf813ff6be
+HIT round 38 full (13 buffers, free 118 MiB) block 3: 131072 of 131072 words changed, first bytes 92beb7bebcbf00bf41bfe0be9c3f46be
+HIT round 39 freed block 0: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 39 freed block 1: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+HIT round 39 freed block 2: 131072 of 131072 words changed, first bytes 00000000000000000000000000000000
+RESULT mode ec, headroom 150 MiB, 40 rounds in 1 s: 48 block hits, first at: round 8 full (13 buffers, free 118 MiB), OOM retries 0

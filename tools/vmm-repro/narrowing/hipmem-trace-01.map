@@ -1,0 +1,1 @@
+hip_5.1 { global: hipMemAddressReserve; hipMemAddressFree; hipMemCreate; hipMemMap; hipMemSetAccess; hipMemUnmap; hipMemRelease; local: *; };

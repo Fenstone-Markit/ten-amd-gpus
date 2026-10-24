@@ -1,0 +1,82 @@
+2.12.0+rocm10.0.0 7.15.26333 /opt/python/lib/python3.14/site-packages/_rocm_sdk_core/lib/libamdhip64.so.7
+weights 22272 MiB, free 2042 MiB
+round 1: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 3 after hipMalloc 8 buffers 1311 MiB block 0: 131072 words, first bytes abababababababababababababababab
+HIT round 3 after hipMalloc 8 buffers 1311 MiB block 1: 131072 words, first bytes abababababababababababababababab
+HIT round 3 after hipMalloc 8 buffers 1311 MiB block 2: 131072 words, first bytes abababababababababababababababab
+HIT round 3 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 3: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 3 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 3 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 3 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 3 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 4 torch-full block 3: 131072 words, first bytes 29bf9abff0bd9bbfa0bf17c0c1bfecbe
+HIT round 5 torch-full block 3: 131072 words, first bytes 67bfb93f823e45be873f03400740923d
+HIT round 5 after hipMalloc 8 buffers 1311 MiB block 0: 131072 words, first bytes abababababababababababababababab
+HIT round 5 after hipMalloc 8 buffers 1311 MiB block 1: 131072 words, first bytes abababababababababababababababab
+HIT round 5 after hipMalloc 8 buffers 1311 MiB block 2: 131072 words, first bytes abababababababababababababababab
+HIT round 5 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 5: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 5 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 5 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 5 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 5 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 torch-full block 3: 131072 words, first bytes c5beeabea23f84bdfe3eb83e41be1fbe
+HIT round 7 after hipMalloc 8 buffers 1311 MiB block 0: 131072 words, first bytes abababababababababababababababab
+HIT round 7 after hipMalloc 8 buffers 1311 MiB block 1: 131072 words, first bytes abababababababababababababababab
+HIT round 7 after hipMalloc 8 buffers 1311 MiB block 2: 131072 words, first bytes abababababababababababababababab
+round 7: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 7 freed block 0: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 freed block 1: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 7 freed block 2: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 8 torch-full block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 9 torch-full block 3: 131072 words, first bytes 75be013ed13fe9bec53f90bfc2bd163f
+round 9: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 10 torch-full block 3: 131071 words, first bytes 9bbff7bf433f544095bfadbfb33f6abd
+HIT round 11 torch-full block 3: 131072 words, first bytes 51bf6f3fc4bf0ac00c3fdc3e3dc0cabc
+round 11: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 12 torch-full block 3: 131072 words, first bytes 523f8bbe873e693da5bfaebf763e893f
+HIT round 13 torch-full block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 13 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 13: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 13 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 15 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 15: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 15 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 17 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 17: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 17 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 19 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 19: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 19 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 21 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 21: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 21 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 23 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 23: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 23 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 25 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 25: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 25 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 27 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 27: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 27 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 29 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 29: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 29 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 31 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 31: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 31 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 33 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 33: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 33 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 35 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 35: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 35 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 37 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 37: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 37 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+HIT round 39 after hipMalloc 8 buffers 1311 MiB block 3: 131072 words, first bytes abababababababababababababababab
+round 39: hipMalloc 8 buffers 1311 MiB, free 128 MiB
+HIT round 39 freed block 3: 131072 words, first bytes 00000000000000000000000000000000
+RESULT 40 rounds, 1892 MiB torch + 1300 MiB hipMalloc after each release: 59 block hits (25 right after hipMalloc), OOM 0

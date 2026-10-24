@@ -1,0 +1,3 @@
+devices 1, AMD Radeon RX 7900 XTX, alloc conf: <torch.cuda.memory._CUDAAllocator object at 0x70782d7b4050>
+weights 22272 MiB; free 2042 MiB; headroom target 150 MiB; canary at 0x706bdce80000
+RESULT mode none, headroom 150 MiB, 40 rounds in 0 s: 0 block hits, first at: None, OOM retries 0
