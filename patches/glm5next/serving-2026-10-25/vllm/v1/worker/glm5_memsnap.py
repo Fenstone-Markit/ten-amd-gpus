@@ -1,0 +1,36 @@
+# [claude-memsnap-01] Record PyTorch's allocation history (with Python stacks) on one worker and save snapshots from a background
+# thread: one as soon as PyTorch has to retry an allocation (it is at the edge of the card; up to GLM5_MEMSNAP_MAX_RETRY dumps), and
+# one every GLM5_MEMSNAP_PERIOD seconds, alternating between two files, so a snapshot from just before a crash survives it.
+# Each dump also appends a line with reserved/allocated/peak/device-free bytes to rank<R>-log.txt. Started from gpu_worker.init_device
+# when GLM5_MEMSNAP_RANK equals the worker's rank. Diagnostic only; nothing is written to GPU memory.
+import os, threading, time, logging
+import torch
+_log = logging.getLogger("vllm.glm5_memsnap")
+def start(rank, device, log=None):
+    log = log or _log
+    d = os.environ.get("GLM5_MEMSNAP_DIR", "/cache/memsnap"); os.makedirs(d, exist_ok=True)
+    entries = int(os.environ.get("GLM5_MEMSNAP_ENTRIES", "100000")); period = float(os.environ.get("GLM5_MEMSNAP_PERIOD", "5"))
+    max_retry = int(os.environ.get("GLM5_MEMSNAP_MAX_RETRY", "6"))
+    torch.cuda.memory._record_memory_history(enabled="all", context="all", stacks="python", max_entries=entries)
+    def dump(why, path, st, retries):
+        torch.cuda.memory._dump_snapshot(path + ".tmp"); os.replace(path + ".tmp", path)
+        f, t = torch.cuda.mem_get_info(device)
+        with open(f"{d}/rank{rank}-log.txt", "a") as fh:
+            fh.write(f"{time.time():.3f} {why} {os.path.basename(path)} reserved {torch.cuda.memory_reserved(device)} "
+                     f"allocated {torch.cuda.memory_allocated(device)} peak_allocated {st.get('allocated_bytes.all.peak', 0)} "
+                     f"peak_reserved {st.get('reserved_bytes.all.peak', 0)} device_free {f} total {t} retries {retries}\n")
+    def loop():
+        last = None; last_t = time.time(); k = 0; nr = 0
+        while True:
+            time.sleep(0.05)
+            try:
+                st = torch.cuda.memory_stats(device); r = st.get("num_alloc_retries", 0) + st.get("num_ooms", 0); now = time.time()
+                if last is not None and r > last and nr < max_retry:
+                    nr += 1; dump(f"retry{r}", f"{d}/rank{rank}-retry{nr}.pickle", st, r); last_t = time.time()
+                elif now - last_t >= period:
+                    dump("periodic", f"{d}/rank{rank}-periodic-{k % 2}.pickle", st, r); k += 1; last_t = time.time()
+                last = r
+            except Exception as e:
+                log.warning("[GLM5_MEMSNAP] dump failed: %r", e); time.sleep(1)
+    threading.Thread(target=loop, daemon=True, name="glm5-memsnap").start()
+    log.info("[GLM5_MEMSNAP] recording on rank %d (%s): %d entries, python stacks, dumps in %s", rank, device, entries, d)

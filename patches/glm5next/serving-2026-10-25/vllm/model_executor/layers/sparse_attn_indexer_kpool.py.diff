@@ -1,0 +1,34 @@
+--- a/overlay/model_executor/layers/sparse_attn_indexer_kpool.py
++++ b/model_executor/layers/sparse_attn_indexer_kpool.py
+@@ -519,10 +519,20 @@
+         values_spec, scales_spec = _gather_workspace_shapes(
+             total_seq_lens, head_dim, fp8_dtype, use_fp4_cache
+         )
++        _mt = os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++        _mt_before = torch.cuda.memory_allocated() if _mt else 0
+         k_quant_full, k_scale_full = workspace_manager.get_simultaneous(
+             values_spec,
+             scales_spec,
+         )
++        if _mt:
++            _ws_bytes = (k_quant_full.numel() * k_quant_full.element_size()
++                         + k_scale_full.numel() * k_scale_full.element_size())
++            print(f"[MEM_TRACE] indexer k-gather workspace: total_seq_lens={total_seq_lens} "
++                  f"values={list(values_spec[0])} scales={list(scales_spec[0])} "
++                  f"ws={_ws_bytes/1024**3:.3f} GiB  "
++                  f"alloc_before={_mt_before/1024**3:.3f} -> "
++                  f"after={torch.cuda.memory_allocated()/1024**3:.3f} GiB", flush=True)
+         for chunk in prefill_metadata.chunks if not short_prefill else ():
+             k_quant = k_quant_full[: chunk.total_seq_lens]
+             k_scale = k_scale_full[: chunk.total_seq_lens]
+@@ -591,6 +601,10 @@
+                     chunk.cu_seqlen_ke,
+                     clean_logits=False,
+                 )
++            if _mt:
++                print(f"[MEM_TRACE] indexer prefill logits: shape={list(logits.shape)} "
++                      f"dtype={logits.dtype} bytes={logits.numel()*logits.element_size()/1024**3:.3f} GiB",
++                      flush=True)
+             num_rows = logits.shape[0]
+ 
+             # kpool: logits are pool-granular (compress_ratio == index_kpool),

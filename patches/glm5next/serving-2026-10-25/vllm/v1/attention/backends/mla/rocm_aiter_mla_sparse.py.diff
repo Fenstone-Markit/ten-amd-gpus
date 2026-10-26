@@ -1,0 +1,127 @@
+--- a/overlay/v1/attention/backends/mla/rocm_aiter_mla_sparse.py
++++ b/v1/attention/backends/mla/rocm_aiter_mla_sparse.py
+@@ -5,6 +5,7 @@
+ from typing import TYPE_CHECKING, ClassVar
+ 
+ import numpy as np
++import os
+ import torch
+ 
+ from vllm import _custom_ops as ops
+@@ -31,6 +32,10 @@
+     AiterMLAHelper,
+ )
+ from vllm.v1.attention.backends.utils import split_decodes_and_prefills
++from vllm.v1.attention.ops.glm5_meta_watch import (
++    meta_watch_build_b,
++    meta_watch_check_e2,
++)
+ from vllm.v1.kv_cache_interface import AttentionSpec
+ from vllm.v1.worker.workspace import current_workspace_manager
+ 
+@@ -225,6 +230,24 @@
+ # never fire, keeping non-spec behavior bit-identical). Escape hatch:
+ # GLM5_SPEC_VERIFY_TORCH=1 keeps the pre-P4 torch fallback (checked by the
+ # caller in _forward_mla, not here, so the gate stays a pure shape predicate).
++# [claude-mixspec-01] MTP verify rows (<= spec+1 per decode request) in the same step as another request's prompt chunk.
++# Per-token CSR like the other three arms; see ~/fp8-rdna3-01/mixed-spec-01-edit.py. GLM5_SPEC_MIXED_TORCH=1 opts out.
++def _use_rocm_sparse_mixed_spec(
++    attn_metadata: "ROCMAiterMLASparseMetadata",
++    head_size: int,
++    kv_lora_rank: int,
++    spec_tokens: int,
++) -> bool:
++    return (
++        os.environ.get("GLM5_SPEC_MIXED_TORCH", "0") != "1"
++        and head_size == kv_lora_rank
++        and spec_tokens > 0
++        and attn_metadata.num_prefills > 0
++        and attn_metadata.num_decodes > 0
++        and attn_metadata.num_decode_tokens <= (spec_tokens + 1) * attn_metadata.num_decodes
++    )
++
++
+ def _use_rocm_sparse_spec_verify(
+     attn_metadata: "ROCMAiterMLASparseMetadata",
+     head_size: int,
+@@ -640,6 +663,9 @@
+         fast_build: bool = False,
+     ) -> ROCMAiterMLASparseMetadata:
+         num_tokens = common_attn_metadata.num_actual_tokens
++        # [glm5next-port-23] Part 2 (e4): at build start, check seq_lens/qsl
++        # (device buffers) against the host-staged expected values.
++        meta_watch_check_e2("(e4) build start", common_attn_metadata.seq_lens, common_attn_metadata.query_start_loc)
+         (num_decodes, num_prefills, num_decode_tokens, _) = split_decodes_and_prefills(
+             common_attn_metadata,
+             decode_threshold=self.reorder_batch_threshold or 1,
+@@ -673,6 +699,10 @@
+             - common_attn_metadata.query_start_loc[:-1]
+         )
+         seq_lens = common_attn_metadata.seq_lens
++        # [glm5next-port-23] Part 2 (e5): before generate_sparse_seqlen_triton,
++        # confirm seq_lens/qsl still sane (the only GPU writer in the prologue is
++        # this kernel, which reads qsl as an index into its output buffer).
++        meta_watch_check_e2("(e5) before sparse_seqlen kernel", seq_lens, common_attn_metadata.query_start_loc)
+         sparse_seqlen = generate_sparse_seqlen_triton(
+             query_lens,
+             seq_lens,
+@@ -681,9 +711,46 @@
+             num_tokens,
+             common_attn_metadata.max_query_len,
+         )
++        # [glm5next-port-23] Part 2 (e6): after generate_sparse_seqlen_triton,
++        # check whether seq_lens/qsl are now corrupted (if the kernel wrote OOB
++        # into the region containing them). Also dump the sparse_seqlen output
++        # buffer (a freshly zero-initialized tensor) to see if it is garbage.
++        meta_watch_check_e2("(e6) after sparse_seqlen kernel", seq_lens, common_attn_metadata.query_start_loc)
++        if os.environ.get("GLM5_META_WATCH") == "1":
++            try:
++                torch.cuda.synchronize()
++                sse = sparse_seqlen[:num_tokens].detach().cpu().tolist()
++                try:
++                    sptr = hex(sparse_seqlen.data_ptr())
++                except Exception:
++                    sptr = "?"
++                print("[GLM5_META_WATCH e] CHECKPOINT=(e6) after sparse_seqlen kernel "
++                      "sparse_seqlen[:%d]=%s ptr=%s" % (num_tokens, sse, sptr), flush=True)
++            except Exception:
++                pass
+ 
+         torch.cumsum(sparse_seqlen, dim=0, out=self.paged_kv_indptr[1 : num_tokens + 1])
++        # [glm5next-port-23] Part 2 (e7): after the cumsum, re-check seq_lens/qsl.
++        # If GARBAGE here, the cumsum is the writer (it writes paged_kv_indptr, but
++        # if it writes OOB it could hit the seq_lens/qsl/sparse_seqlen region).
++        meta_watch_check_e2("(e7) after cumsum", seq_lens, common_attn_metadata.query_start_loc)
+         self.paged_kv_indptr[num_tokens + 1 :].fill_(self.paged_kv_indptr[num_tokens])
++        # [glm5next-port-23] Part 2 (e8): after the fill, re-check seq_lens/qsl.
++        meta_watch_check_e2("(e8) after fill", seq_lens, common_attn_metadata.query_start_loc)
++
++        # [glm5next-port-23] GLM5_META_WATCH (b): checkpoint right after the cumsum
++        # into paged_kv_indptr — record a CPU reference and dump the values the
++        # build saw. No new device allocation. Off by default; no-op when off.
++        meta_watch_build_b(
++            seq_lens,
++            common_attn_metadata.query_start_loc,
++            sparse_seqlen,
++            self.paged_kv_indptr,
++            common_attn_metadata.num_reqs,
++            num_tokens,
++            self.topk_tokens,
++            self.model_config.max_model_len,
++        )
+ 
+         req_id_per_token = self.req_id_per_token_buffer[:num_tokens]
+         qo_indptr = self.qo_indptr[: num_tokens + 1]
+@@ -933,6 +1000,12 @@
+                             self._num_spec_tokens,
+                         )
+                     )
++                    or _use_rocm_sparse_mixed_spec(  # [claude-mixspec-01]
++                        attn_metadata,
++                        q.shape[-1],
++                        self.kv_lora_rank,
++                        self._num_spec_tokens,
++                    )
+                 )
+             ):
+                 from vllm.v1.attention.ops.rocm_aiter_mla_sparse import (

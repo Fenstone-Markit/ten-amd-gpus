@@ -1,0 +1,65 @@
+--- a/new/v1/attention/ops/glm5_mqa_logits_rdna3.py
++++ b/v1/attention/ops/glm5_mqa_logits_rdna3.py
+@@ -0,0 +1,62 @@
++# mqa_logits_rdna3.py [claude-mqa-01]: fused Triton kernel for the sparse indexer's prompt logits on RDNA3 (gfx1100, no aiter).
++#   logits[m, n] = sum_h w[m, h] * relu(kscale[n] * (q[m, h, :] . k[n, :]))   for ks[m] <= n < ke[m], else -inf
++# Replaces fp8_mqa_logits_torch's prompt path (head-by-head einsum + ~7 full passes over an fp32 [M, N] tensor per head, 32 heads),
++# which claude-mt-01 measured at 17-25% of every stage's prompt time. q and k are fp8 e4m3 (exact in bf16); this kernel takes
++# them as bf16 (converted once per call in torch, as the torch path does), multiplies on WMMA with fp32 accumulation, and
++# keeps the scores in fp32 throughout (the torch path rounds each head's q.k to bf16 before scaling: tiny ranking differences
++# at near-ties are expected). Tiles of BM query rows x BN keys; each key tile is loaded once and reused for every head.
++import torch
++from vllm.triton_utils import tl, triton
++
++
++@triton.jit
++def _mqa_logits_kernel(Q, K, KS, W, CS, CE, OUT, M, N,
++                       sq_m, sq_h, sk_n, sw_m, so_m,
++                       H: tl.constexpr, D: tl.constexpr, BM: tl.constexpr, BN: tl.constexpr):
++    pm = tl.program_id(0)
++    pn = tl.program_id(1)
++    rm = pm * BM + tl.arange(0, BM)
++    rn = pn * BN + tl.arange(0, BN)
++    rd = tl.arange(0, D)
++    mmask = rm < M
++    nmask = rn < N
++    cs = tl.load(CS + rm, mask=mmask, other=0)
++    ce = tl.load(CE + rm, mask=mmask, other=0)
++    lo = tl.min(tl.where(mmask, cs, 2147483647))
++    hi = tl.max(tl.where(mmask, ce, 0))
++    n0 = pn * BN
++    acc = tl.zeros([BM, BN], dtype=tl.float32)
++    if (n0 < hi) & (n0 + BN > lo):
++        kb = tl.load(K + rn[:, None].to(tl.int64) * sk_n + rd[None, :], mask=nmask[:, None], other=0.0)
++        ksc = tl.load(KS + rn, mask=nmask, other=0.0)
++        for h in range(H):
++            qb = tl.load(Q + rm[:, None].to(tl.int64) * sq_m + h * sq_h + rd[None, :], mask=mmask[:, None], other=0.0)
++            s = tl.dot(qb, tl.trans(kb))
++            s = tl.maximum(s * ksc[None, :], 0.0)
++            w = tl.load(W + rm.to(tl.int64) * sw_m + h, mask=mmask, other=0.0)
++            acc += s * w[:, None]
++    inwin = (rn[None, :] >= cs[:, None]) & (rn[None, :] < ce[:, None])
++    out = tl.where(inwin, acc, float("-inf"))
++    tl.store(OUT + rm[:, None].to(tl.int64) * so_m + rn[None, :], out, mask=mmask[:, None] & nmask[None, :])
++
++
++def fp8_mqa_logits_rdna3(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, BM=64, BN=64, num_warps=4):
++    """Same contract as fp8_mqa_logits_torch: q [M, H, D] fp8, kv = (k [N, D] fp8, scale [N] or [N, 1] fp32),
++    weights [M, H] fp32, ks/ke [M] int32. Returns fp32 [M, N] with -inf outside [ks, ke)."""
++    k_fp8, scale = kv
++    M, H, D = q.shape
++    N = k_fp8.shape[0]
++    qb = q.to(torch.bfloat16).contiguous()
++    kb = k_fp8.to(torch.bfloat16).contiguous()
++    ks = scale.reshape(-1).to(torch.float32).contiguous()
++    w = weights.to(torch.float32).contiguous()
++    cs = cu_seqlen_ks.to(torch.int32).contiguous()
++    ce = cu_seqlen_ke.to(torch.int32).contiguous()
++    out = torch.empty((M, N), dtype=torch.float32, device=q.device)
++    if M == 0 or N == 0:
++        return out
++    grid = (triton.cdiv(M, BM), triton.cdiv(N, BN))
++    _mqa_logits_kernel[grid](qb, kb, ks, w, cs, ce, out, M, N,
++                             qb.stride(0), qb.stride(1), kb.stride(0), w.stride(0), out.stride(0),
++                             H=H, D=D, BM=BM, BN=BN, num_warps=num_warps)
++    return out

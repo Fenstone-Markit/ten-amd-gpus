@@ -1,0 +1,35 @@
+--- a/overlay/v1/attention/backends/mla/indexer.py
++++ b/v1/attention/backends/mla/indexer.py
+@@ -2,6 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ from dataclasses import dataclass
+ 
++import os
+ import torch
+ 
+ import vllm.envs as envs
+@@ -628,6 +629,24 @@
+ 
+ def get_max_prefill_buffer_size(vllm_config: VllmConfig):
+     max_model_len = vllm_config.model_config.max_model_len
++    # [glm5-ws-fit] GLM5_WS_FIT=1 (off by default): size the indexer K-gather
++    # workspace to what serving actually needs instead of the 40x over-reserved
++    # flashmla_sparse-parity size. The workspace is a single shared buffer
++    # (max_model_len*40 tokens * 132 B/token) that the DSA indexer prefill
++    # slices per chunk (k_quant_full[:chunk.total_seq_lens]). Serving only ever
++    # processes one prefill request's context at a time in a chunk, and a
++    # request's context is <= max_model_len (split_prefill_chunks asserts
++    # seq_lens_cpu <= workspace_size), so max_model_len is the true upper bound.
++    # The 40x over-reservation (max_model_len*40) is a flashmla_sparse-parity
++    # margin that is never needed at max_num_seqs=2. Capping at max_model_len
++    # keeps a full-window reservation (so the profile still counts it) while
++    # removing the 39x excess. NOTE (glm5next-port-13): on the two-card profile
++    # this reclassifies 0.33 GiB from 'consumed' to 'peak activation' (the
++    # attention/mHC prefill transient refills the room), so it frees no usable
++    # memory and does NOT by itself enable the ten-card start at 65536; it is a
++    # candidate, not a working fix. See README Findings #3 / #6.
++    if os.environ.get("GLM5_WS_FIT", "0") == "1":
++        return max_model_len
+     # NOTE(Chen): 40 is a magic number for controlling the prefill buffer size.
+     # Each entry is 128 fp8 bytes and 4 scale bytes for a total of 132 bytes.
+     # The flashmla_sparse backend uses a workspace size of 5 * max_model_len.

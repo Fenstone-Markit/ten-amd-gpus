@@ -1,0 +1,212 @@
+--- a/overlay/model_executor/layers/mla.py
++++ b/model_executor/layers/mla.py
+@@ -2,15 +2,31 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ from dataclasses import dataclass
+ 
++import os
+ import torch
+ 
+-from vllm.config import CacheConfig
++from vllm.compilation.breakable_cudagraph import (
++    BreakableCUDAGraphCapture,
++    glm5_dsa_break_parts,
++)
++from vllm.config import CacheConfig, get_current_vllm_config
+ from vllm.model_executor.custom_op import PluggableLayer
+ from vllm.model_executor.layers.attention import MLAAttention
+ from vllm.model_executor.layers.quantization import QuantizationConfig
+ from vllm.models.common.ops import fused_q_kv_rmsnorm
+ from vllm.platforms import current_platform
+ 
++# [glm5next-port-12] cached set of DSA decode parts forced to eager breaks
++# (off by default; populated once from the GLM5_DSA_BREAK env var).
++_GLM5_DSA_BREAK_PARTS: set[str] | None = None
++
++
++def _glm5_dsa_break_parts() -> set[str]:
++    global _GLM5_DSA_BREAK_PARTS
++    if _GLM5_DSA_BREAK_PARTS is None:
++        _GLM5_DSA_BREAK_PARTS = glm5_dsa_break_parts()
++    return _GLM5_DSA_BREAK_PARTS
++
+ 
+ @dataclass
+ class MLAModules:
+@@ -33,6 +49,56 @@
+ 
+ 
+ # --8<-- [start:multi_head_latent_attention]
++
++
++# ---------------------------------------------------------------------------
++# [glm5next-port-12] GLM5_DSA_BREAK support (off by default).
++#
++# A forced break must run its part OUTSIDE the graph at capture and at every
++# replay, with its outputs at addresses that exist BEFORE the call (a fresh
++# tensor returned by the part would change address each replay and break the
++# downstream graph segments, which read those addresses). Two parts:
++#
++#   * "indexer": sparse_attn_indexer_kpool. It writes its top-k into the
++#     SHARED persistent topk_indices_buffer (allocated at model init, model.py:
++#     664), which the sparse-attention decode (next graph segment) reads. No
++#     copy is needed -- the part already writes into a buffer that exists
++#     before the call. Forcing the break is sufficient.
++#
++#   * "attn": the sparse-attention decode (self.mla_attn -> forward_mqa). It
++#     returns a FRESH [num_tokens, num_heads, kv_lora_rank] tensor. We copy it
++#     into a persistent buffer of the LARGEST shape it can produce (rows =
++#     max_num_batched_tokens, the maximum over every captured batch descriptor;
++#     num_heads and kv_lora_rank are fixed model dims) and pass that buffer
++#     downstream (o_proj, in the next graph segment) so it reads a fixed
++#     address. The buffer is allocated ONCE in __init__ (before any capture),
++#     so its address is stable across captures and replays.
++# ---------------------------------------------------------------------------
++
++
++def _dsa_break_attn(layer, fn, num_tokens: int) -> torch.Tensor:
++    """Run the DSA sparse-attention decode (fn) as a forced eager break.
++
++    Copies the part's fresh output into layer._dsa_attn_break_buf (rows =
++    num_tokens) and returns that slice, so the downstream o_proj (next graph
++    segment) reads a fixed address. With no active capture (eager / no-graph
++    path) it runs fn and copies into the buffer. Inside a capture it runs fn
++    eagerly between the graph segments (a REAL break) and records it for
++    replay.
++    """
++    cap = BreakableCUDAGraphCapture.current()
++    buf = layer._dsa_attn_break_buf
++
++    def _run() -> torch.Tensor:
++        fresh = fn()
++        buf[:num_tokens].copy_(fresh)
++        return buf[:num_tokens]
++
++    if cap is None or not cap._capturing:
++        return _run()
++    return cap.force_eager(_run)
++
++
+ @PluggableLayer.register("multi_head_latent_attention")
+ class MultiHeadLatentAttentionWrapper(PluggableLayer):
+     """Pluggable MLA layer which allows OOT backends to add
+@@ -152,6 +218,22 @@
+             )
+         self.prefix = prefix
+ 
++        # [glm5next-port-12] persistent output buffer for the "attn" forced
++        # break (allocated once, before any capture, so its address is stable
++        # across captures and replays). Only allocated when the switch is on.
++        # Rows = max_num_batched_tokens (the maximum over every captured batch
++        # descriptor); cols = num_heads * v_head_dim (the inner attention
++        # module's output, pre-o_proj).
++        self._dsa_attn_break_buf = None
++        if "attn" in glm5_dsa_break_parts():
++            cfg = get_current_vllm_config()
++            self._dsa_attn_break_buf = torch.empty(
++                (cfg.scheduler_config.max_num_batched_tokens,
++                 self.num_heads * self.v_head_dim),
++                dtype=torch.bfloat16,
++                device=self.o_proj.weight.device,
++            )
++
+     def forward(
+         self,
+         positions: torch.Tensor,
+@@ -222,7 +304,34 @@
+             )
+ 
+         if self.indexer and self.is_sparse and not self.skip_topk:
+-            self.indexer(hidden_states, q_c, positions, self.indexer_rope_emb)
++            _mt = os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++            _mt_cap = torch.cuda.is_current_stream_capturing()
++            if _mt and not _mt_cap:
++                torch.cuda.synchronize()
++                _pk_i = torch.cuda.memory_allocated()
++            if "indexer" in _glm5_dsa_break_parts():
++                # Forced eager break: the indexer writes its top-k into the
++                # SHARED persistent topk_indices_buffer (which the sparse
++                # attention decode, in the next graph segment, reads), so no
++                # copy is needed -- run it eagerly between graph segments.
++                cap = BreakableCUDAGraphCapture.current()
++                if cap is not None and cap._capturing:
++                    cap.force_eager(
++                        lambda: self.indexer(
++                            hidden_states, q_c, positions, self.indexer_rope_emb
++                        )
++                    )
++                else:
++                    self.indexer(
++                        hidden_states, q_c, positions, self.indexer_rope_emb
++                    )
++            else:
++                self.indexer(hidden_states, q_c, positions, self.indexer_rope_emb)
++            if _mt and not _mt_cap:
++                _pk_i2 = torch.cuda.memory_allocated()
++                print(f"[MEM_SUB] indexer: alloc_before={_pk_i/1024**3:.3f} "
++                      f"after={_pk_i2/1024**3:.3f} GiB "
++                      f"delta={(_pk_i2-_pk_i)/1024**3:.3f} GiB", flush=True)
+ 
+         if llama_4_scaling is not None:
+             q *= llama_4_scaling
+@@ -231,13 +340,53 @@
+         if self.dcp_q_replicate:
+             q_dcp_replicated, q = q, q_proj_layer._local_view(q)
+ 
+-        attn_out = self.mla_attn(
+-            q,
+-            kv_c_normed,
+-            k_pe,
+-            output_shape=(hidden_states.shape[0], self.num_heads * self.v_head_dim),
+-            q_dcp_replicated=q_dcp_replicated,
+-        )
++        if "attn" in _glm5_dsa_break_parts():
++            _mt = os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++            _mt_cap = torch.cuda.is_current_stream_capturing()
++            if _mt and not _mt_cap:
++                torch.cuda.synchronize()
++                _pk_a0 = torch.cuda.memory_stats().get(
++                    "allocated_bytes.all.peak", 0)
++            attn_out = _dsa_break_attn(
++                self,
++                lambda: self.mla_attn(
++                    q,
++                    kv_c_normed,
++                    k_pe,
++                    output_shape=(
++                        hidden_states.shape[0],
++                        self.num_heads * self.v_head_dim,
++                    ),
++                    q_dcp_replicated=q_dcp_replicated,
++                ),
++                q.shape[0],
++            )
++            if _mt and not _mt_cap:
++                _pk_a1 = torch.cuda.memory_stats().get(
++                    "allocated_bytes.all.peak", 0)
++                print(f"[MEM_SUB] mla_attn peak_before={_pk_a0/1024**3:.3f} "
++                      f"after={_pk_a1/1024**3:.3f} GiB "
++                      f"delta={(_pk_a1-_pk_a0)/1024**3:.3f} GiB", flush=True)
++        else:
++            _mt = os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++            _mt_cap = torch.cuda.is_current_stream_capturing()
++            if _mt and not _mt_cap:
++                torch.cuda.synchronize()
++                _pk_a0 = torch.cuda.memory_stats().get(
++                    "allocated_bytes.all.peak", 0)
++            attn_out = self.mla_attn(
++                q,
++                kv_c_normed,
++                k_pe,
++                output_shape=(hidden_states.shape[0], self.num_heads * self.v_head_dim),
++                q_dcp_replicated=q_dcp_replicated,
++            )
++            if _mt and not _mt_cap:
++                _pk_a1 = torch.cuda.memory_stats().get(
++                    "allocated_bytes.all.peak", 0)
++                print(f"[MEM_SUB] mla_attn peak_before={_pk_a0/1024**3:.3f} "
++                      f"after={_pk_a1/1024**3:.3f} GiB "
++                      f"delta={(_pk_a1-_pk_a0)/1024**3:.3f} GiB", flush=True)
+ 
+         if self.g_proj is not None:
+             attn_out = attn_out * self.g_proj(hidden_states)[0].sigmoid()

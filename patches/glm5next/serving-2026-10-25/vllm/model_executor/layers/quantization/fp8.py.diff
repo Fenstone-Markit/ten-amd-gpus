@@ -1,0 +1,23 @@
+--- a/image/model_executor/layers/quantization/fp8.py
++++ b/model_executor/layers/quantization/fp8.py
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
++import os
+ from typing import TYPE_CHECKING, Any
+ 
+ import torch
+@@ -175,6 +176,12 @@
+     def get_quant_method(
+         self, layer: torch.nn.Module, prefix: str
+     ) -> "QuantizeMethodBase | None":
++        # [claude-fp8-rdna3-01] block-FP8 on RDNA3 (gfx1100): our own MoE kernels and dequantized dense linears
++        if os.environ.get("GLM5_FP8_RDNA3", "0") == "1":
++            from vllm.model_executor.layers.quantization.fp8_rdna3 import rdna3_quant_method
++            _m = rdna3_quant_method(self, layer, prefix)
++            if _m is not None:
++                return _m
+         if isinstance(layer, LinearBase):
+             if is_layer_skipped(
+                 prefix=prefix,

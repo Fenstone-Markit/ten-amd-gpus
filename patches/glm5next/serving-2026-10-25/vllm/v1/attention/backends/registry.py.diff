@@ -1,0 +1,24 @@
+--- a/overlay/v1/attention/backends/registry.py
++++ b/v1/attention/backends/registry.py
+@@ -105,6 +105,21 @@
+     MINIMAX_M3_SPARSE = (
+         "vllm.models.minimax_m3.common.sparse_attention.MiniMaxM3SparseBackend"
+     )
++    # [glm5next-port-03] The installed 0.27.1.dev5 config/attention.py references
++    # AttentionBackendEnum.CUTLASS_MSA / TRITON_MSA (the MiniMax-M3 MSA decode
++    # backends) in its __post_init__. The overlay's registry.py (an older tree)
++    # dropped those two members, so importing vllm.config.attention raised
++    # AttributeError before any model loaded. Restore the two members with the
++    # exact class paths from the installed registry.py so the installed config
++    # resolves. Adds members only; deletes no check, changes no selection.
++    CUTLASS_MSA = (
++        "vllm.models.minimax_m3.nvidia.sparse_attention_msa."
++        "MiniMaxM3SparseCutlassBackend"
++    )
++    TRITON_MSA = (
++        "vllm.models.minimax_m3.nvidia.sparse_attention_msa."
++        "MiniMaxM3SparseTritonBackend"
++    )
+     NO_ATTENTION = "vllm.v1.attention.backends.no_attention.NoAttentionBackend"
+     FLEX_ATTENTION = "vllm.v1.attention.backends.flex_attention.FlexAttentionBackend"
+     # HPC Attention Backend:

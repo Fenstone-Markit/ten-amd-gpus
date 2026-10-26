@@ -1,0 +1,41 @@
+--- a/overlay/model_executor/layers/mhc.py
++++ b/model_executor/layers/mhc.py
+@@ -17,11 +17,18 @@
+     if current_platform.is_cuda():
+         return True
+     if current_platform.is_rocm():
+-        from vllm.platforms.rocm import on_gfx942
++        from vllm.platforms.rocm import on_gfx942, on_gfx1100
+ 
+         # TileLang MHC currently produces incorrect results on gfx942. Keep
+         # gfx942 on the existing torch/triton fallbacks until that path is fixed.
+-        return not on_gfx942()
++        # [glm5next-port-02] On RDNA3 (gfx1100, the 7900 XTX) the TileLang MHC
++        # output does not match the torch reference or the fused Triton kernel
++        # (measured max|d layer_input| = 1.875e-1), and the tilelang branch in
++        # forward_hip shadows both the fused kernel and the GLM5_MHC_TORCH
++        # escape hatch. Route gfx1100 to the fused Triton kernels (the overlay's
++        # intent: "decode fast path on ROCm without tilelang/aiter") by excluding
++        # it here, exactly like the gfx942 exclusion.
++        return not (on_gfx942() or on_gfx1100())
+     return False
+ 
+ 
+@@ -39,11 +46,16 @@
+     _MHC_FUSED = None
+ 
+ 
++# [claude-mhc-01] see ~/fp8-rdna3-01/mhc-prefill-01-edit.py; 64 = the overlay's _FUSED_MAX_T.
++import os as _glm5_os
++_GLM5_MHC_FUSED_MAX_T = int(_glm5_os.environ.get("GLM5_MHC_FUSED_MAX_T", "64") or 64)
++
++
+ def _fused_active(residual: torch.Tensor) -> bool:
+     return (
+         _MHC_FUSED is not None
+         and _MHC_FUSED.mhc_fused_enabled()
+-        and _MHC_FUSED.small_t(residual)
++        and _MHC_FUSED._num_tokens(residual) <= _GLM5_MHC_FUSED_MAX_T  # [claude-mhc-01]
+     )
+ 
+ 

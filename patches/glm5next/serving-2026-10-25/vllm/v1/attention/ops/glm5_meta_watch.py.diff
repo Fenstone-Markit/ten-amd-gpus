@@ -1,0 +1,968 @@
+--- a/new/v1/attention/ops/glm5_meta_watch.py
++++ b/v1/attention/ops/glm5_meta_watch.py
+@@ -0,0 +1,965 @@
++# SPDX-License-Identifier: Apache-2.0
++# [glm5next-port-23] GLM5_META_WATCH: shared watch state for locating where the
++# DSA paged_kv_indptr garbage first appears.
++#
++# The faulting operation is the ragged sparse-attention prefill kernel (ops/
++# rocm_aiter_mla_sparse.py), whose indptr = the metadata build's
++# paged_kv_indptr (cumsum of sparse_seqlen). Two hypotheses for the garbage:
++#   (1) seq_lens / query_start_loc already held garbage when the metadata was
++#       built, OR
++#   (2) something wrote over paged_kv_indptr after the cumsum and before the
++#       kernel read it.
++#
++# This module holds the per-worker reference copy (CPU) of
++# paged_kv_indptr[:num_tokens + 1] taken at the build (checkpoint b) and the
++# print policy. It is a leaf module (imports nothing) so it can be imported
++# from gpu_model_runner, the mla metadata builder and the model layer loop
++# without any import cycle.
++#
++# GLM5_META_WATCH is OFF by default, read at call time. When off, every
++# function here returns immediately and does no host read / sync / allocation.
++import os
++import numpy as np
++import torch
++
++# ---------------------------------------------------------------------------
++# [glm5next-port-24] Part 2: GLM5_SYNC_H2D (off by default).
++# Wraps torch.Tensor.copy_ / .to / .cuda so that every copy from a CPU tensor to
++# a GPU tensor runs with non_blocking=False and is followed by
++# torch.cuda.synchronize(). Does nothing different while a CUDA graph is being
++# captured or while torch.compiler.is_compiling() is true. Counts the wrapped H2D
++# calls per worker and prints the count at the first wrong value (via _p1_fire)
++# and at start-up (build #5). Read at call time; no-op when the switch is off.
++# ---------------------------------------------------------------------------
++_H2D_COUNT = 0
++_H2D_INSTALLED = False
++_H2D_ORIG = {}
++_H2D_PRINTED_STARTUP = False
++
++
++def _h2d_enabled():
++    return os.environ.get("GLM5_SYNC_H2D") == "1"
++
++
++def _h2d_in_capture():
++    try:
++        if torch.cuda.is_current_stream_capturing():
++            return True
++    except Exception:
++        pass
++    try:
++        import torch.compiler
++        if torch.compiler.is_compiling():
++            return True
++    except Exception:
++        pass
++    return False
++
++
++def _h2d_is_cpu(x):
++    try:
++        if isinstance(x, torch.Tensor):
++            return x.device.type == "cpu"
++    except Exception:
++        pass
++    return False
++
++
++def _h2d_do_sync():
++    # Count one H2D copy and force it to complete before the next op.
++    global _H2D_COUNT
++    try:
++        _H2D_COUNT += 1
++        torch.cuda.synchronize()
++    except Exception:
++        pass
++
++
++def _h2d_install():
++    global _H2D_INSTALLED
++    if _H2D_INSTALLED or not _h2d_enabled():
++        return
++    _H2D_INSTALLED = True
++
++    def _new_copy_(self, src, *a, **kw):
++        h2d = False
++        try:
++            if self.is_cuda and _h2d_is_cpu(src):
++                h2d = True
++                if _h2d_enabled() and not _h2d_in_capture():
++                    kw["non_blocking"] = False
++        except Exception:
++            pass
++        res = _H2D_ORIG["copy_"](self, src, *a, **kw)
++        if h2d and _h2d_enabled() and not _h2d_in_capture():
++            _h2d_do_sync()
++        return res
++
++    def _new_to(self, *a, **kw):
++        res = _H2D_ORIG["to"](self, *a, **kw)
++        try:
++            if isinstance(res, torch.Tensor) and res.is_cuda and not self.is_cuda \
++                    and _h2d_enabled() and not _h2d_in_capture():
++                _h2d_do_sync()
++        except Exception:
++            pass
++        return res
++
++    def _new_cuda(self, *a, **kw):
++        res = _H2D_ORIG["cuda"](self, *a, **kw)
++        try:
++            if isinstance(res, torch.Tensor) and res.is_cuda and not self.is_cuda \
++                    and _h2d_enabled() and not _h2d_in_capture():
++                _h2d_do_sync()
++        except Exception:
++            pass
++        return res
++
++    _H2D_ORIG["copy_"] = torch.Tensor.copy_
++    _H2D_ORIG["to"] = torch.Tensor.to
++    _H2D_ORIG["cuda"] = torch.Tensor.cuda
++    torch.Tensor.copy_ = _new_copy_
++    torch.Tensor.to = _new_to
++    torch.Tensor.cuda = _new_cuda
++    print("[GLM5_SYNC_H2D] installed: copy_/to/cuda wrapped (CPU->GPU: non_blocking off + synchronize)", flush=True)
++
++
++def h2d_count():
++    return _H2D_COUNT
++
++
++_h2d_install()
++
++# ---------------------------------------------------------------------------
++# [glm5next-port-24] Part 3: GLM5_GPU_WRITE_LOG (off by default).
++# During start-up, log every CPU->GPU tensor copy (torch.Tensor.copy_/to/cuda)
++# and every torch.distributed receive/broadcast/all-reduce that writes a GPU
++# tensor (the calls vLLM's GroupCoordinator and its PP send/receive make). For
++# each: dest data_ptr + size in bytes; for a copy, src data_ptr + size + pinned;
++# whether a CUDA graph was being captured; the thread name; the four innermost
++# Python frames (file:line func). Kept in a bounded ring (last 20000). At the
++# first wrong value (the Part 1 forensic fires), print: every logged write whose
++# dest range overlaps the Part 1 overwritten (segment) range; every write whose
++# size is within 64 bytes of that range's length; and every copy whose src range
++# lies inside a /dev/shm mapping or inside a mapping Part 1's search found.
++# ---------------------------------------------------------------------------
++from collections import deque as _gw_deque
++import threading as _gw_threading
++
++_GW_RING = _gw_deque(maxlen=20000)
++_GW_INSTALLED = False
++_GW_P1_SEG = None      # (seg_lo, seg_hi, seg_len) set by _p1_fire
++_GW_P1_HIT_RANGES = []  # (lo, hi) host-mapping ranges that contained the kernel image (Part 1)
++
++
++def _gw_enabled():
++    return os.environ.get("GLM5_GPU_WRITE_LOG") == "1"
++
++
++def _gw_thread_name():
++    try:
++        import threading
++        return threading.current_thread().name
++    except Exception:
++        return "?"
++
++
++def _gw_frames(n=4):
++    import sys
++    out = []
++    fr = sys._getframe()
++    for _ in range(n):
++        fr = fr.f_back
++        if fr is None:
++            break
++        out.append("%s:%d %s" % (os.path.basename(fr.f_code.co_filename), fr.f_lineno, fr.f_code.co_name))
++    return out
++
++
++def _gw_capturing():
++    try:
++        return torch.cuda.is_current_stream_capturing()
++    except Exception:
++        return False
++
++
++def _gw_size(t):
++    try:
++        return t.numel() * t.element_size()
++    except Exception:
++        return -1
++
++
++def _gw_pinned(x):
++    try:
++        if isinstance(x, torch.Tensor) and x.device.type == "cpu":
++            return x.is_pinned()
++    except Exception:
++        pass
++    return None
++
++
++def _gw_log(kind, dest, src=None):
++    if not _gw_enabled():
++        return
++    try:
++        d_ptr = dest.data_ptr() if isinstance(dest, torch.Tensor) and dest.is_cuda else None
++        if d_ptr is None:
++            return  # only log writes that land on a GPU tensor
++        d_size = _gw_size(dest)
++        s_ptr = s_size = None; pinned = None
++        if src is not None and isinstance(src, torch.Tensor):
++            s_ptr = src.data_ptr()
++            s_size = _gw_size(src)
++            pinned = _gw_pinned(src)
++        _GW_RING.append({
++            "kind": kind, "d_ptr": d_ptr, "d_size": d_size,
++            "s_ptr": s_ptr, "s_size": s_size, "pinned": pinned,
++            "cap": _gw_capturing(), "thr": _gw_thread_name(), "fr": _gw_frames(4),
++        })
++    except Exception:
++        pass
++
++
++def _gw_install():
++    global _GW_INSTALLED
++    if _GW_INSTALLED or not _gw_enabled():
++        return
++    _GW_INSTALLED = True
++
++    # --- tensor CPU->GPU copies ---
++    _orig_cpy = torch.Tensor.copy_
++    _orig_to = torch.Tensor.to
++    _orig_cuda = torch.Tensor.cuda
++
++    def _w_cpy(self, src, *a, **kw):
++        r = _orig_cpy(self, src, *a, **kw)
++        if self.is_cuda and isinstance(src, torch.Tensor) and src.device.type == "cpu":
++            _gw_log("copy", self, src)
++        return r
++
++    def _w_to(self, *a, **kw):
++        r = _orig_to(self, *a, **kw)
++        if isinstance(r, torch.Tensor) and r.is_cuda and not self.is_cuda:
++            _gw_log("to", r, self)
++        return r
++
++    def _w_cuda(self, *a, **kw):
++        r = _orig_cuda(self, *a, **kw)
++        if isinstance(r, torch.Tensor) and r.is_cuda and not self.is_cuda:
++            _gw_log("cuda", r, self)
++        return r
++
++    torch.Tensor.copy_ = _w_cpy
++    torch.Tensor.to = _w_to
++    torch.Tensor.cuda = _w_cuda
++
++    # --- torch.distributed (module-level) ---
++    import torch.distributed as dist
++    _od_recv = dist.recv
++    _od_bcast = dist.broadcast
++    _od_ared = dist.all_reduce
++
++    def _w_recv(tensor, *a, **kw):
++        r = _od_recv(tensor, *a, **kw)
++        _gw_log("dist.recv", tensor, None)
++        return r
++
++    def _w_bcast(tensor, *a, **kw):
++        r = _od_bcast(tensor, *a, **kw)
++        _gw_log("dist.broadcast", tensor, None)
++        return r
++
++    def _w_ared(tensor, *a, **kw):
++        r = _od_ared(tensor, *a, **kw)
++        _gw_log("dist.all_reduce", tensor, None)
++        return r
++
++    try:
++        dist.recv = _w_recv
++        dist.broadcast = _w_bcast
++        dist.all_reduce = _w_ared
++    except Exception as e:
++        print("[GLM5_GPU_WRITE_LOG] module-level dist wrap failed: %r" % e, flush=True)
++
++    # --- ProcessGroup level (catches vLLM GroupCoordinator PP send/recv) ---
++    try:
++        PG = dist.ProcessGroup
++        _pg_recv = PG.recv
++        _pg_bcast = PG.broadcast
++        _pg_ared = PG.all_reduce
++
++        def _pw_recv(self, tensor, *a, **kw):
++            r = _pg_recv(self, tensor, *a, **kw)
++            _gw_log("pg.recv", tensor, None)
++            return r
++
++        def _pw_bcast(self, tensor, *a, **kw):
++            r = _pg_bcast(self, tensor, *a, **kw)
++            _gw_log("pg.broadcast", tensor, None)
++            return r
++
++        def _pw_ared(self, tensor, *a, **kw):
++            r = _pg_ared(self, tensor, *a, **kw)
++            _gw_log("pg.all_reduce", tensor, None)
++            return r
++
++        PG.recv = _pw_recv
++        PG.broadcast = _pw_bcast
++        PG.all_reduce = _pw_ared
++    except Exception as e:
++        print("[GLM5_GPU_WRITE_LOG] ProcessGroup wrap failed: %r" % e, flush=True)
++    print("[GLM5_GPU_WRITE_LOG] installed: tensor copy_/to/cuda + dist.recv/broadcast/all_reduce + PG.recv/broadcast/all_reduce (ring=%d)" % 20000, flush=True)
++
++
++_gw_install()
++
++
++def _gw_flush(seg_lo, seg_hi, seg_len):
++    # Called from _p1_fire at the first wrong value. Prints the matching logged writes.
++    global _GW_P1_SEG, _GW_P1_HIT_RANGES
++    _GW_P1_SEG = (seg_lo, seg_hi, seg_len)
++    print("[GLM5_GPU_WRITE_LOG] ring has %d logged writes; searching against overwritten range "
++          "[0x%x, 0x%x] len=%d" % (len(_GW_RING), seg_lo, seg_hi, seg_len), flush=True)
++    # collect /dev/shm mappings + Part 1 hit ranges
++    shm_ranges = []
++    try:
++        for ln in open("/proc/self/maps"):
++            parts = ln.split()
++            if len(parts) < 6 or "/dev/shm" not in ln:
++                continue
++            lo, hi = parts[0].split("-")
++            shm_ranges.append((int(lo, 16), int(hi, 16)))
++    except Exception:
++        pass
++    hit_ranges = list(_GW_P1_HIT_RANGES)
++    all_src_ranges = shm_ranges + hit_ranges
++
++    n_a = n_b = n_c = 0
++    for e in _GW_RING:
++        dp, ds = e["d_ptr"], e["d_size"]
++        # (a) dest range overlaps the overwritten range
++        if dp is not None and ds > 0 and dp < seg_hi and dp + ds >= seg_lo:
++            n_a += 1
++            if n_a <= 40:
++                print("[GLM5_GPU_WRITE_LOG] (a) dest-overlaps: %s d=0x%x+%d cap=%s thr=%s src=0x%s+%s pinned=%s\n"
++                      "      frames: %s" % (e["kind"], dp, ds, e["cap"], e["thr"],
++                                             hex(e["s_ptr"]) if e["s_ptr"] else "-", e["s_size"],
++                                             e["pinned"], " | ".join(e["fr"])), flush=True)
++        # (b) size within 64 bytes of the range length
++        if ds > 0 and abs(ds - seg_len) <= 64:
++            n_b += 1
++            if n_b <= 40:
++                print("[GLM5_GPU_WRITE_LOG] (b) size~len: %s d=0x%x size=%d (range len=%d) cap=%s thr=%s\n"
++                      "      frames: %s" % (e["kind"], dp, ds, seg_len, e["cap"], e["thr"], " | ".join(e["fr"])), flush=True)
++        # (c) copy whose src range lies inside a /dev/shm mapping or a Part 1 hit range
++        if e["kind"] in ("copy", "to", "cuda") and e["s_ptr"] is not None and e["s_size"] and e["s_size"] > 0:
++            for (lo, hi) in all_src_ranges:
++                if lo <= e["s_ptr"] < hi:
++                    n_c += 1
++                    if n_c <= 40:
++                        print("[GLM5_GPU_WRITE_LOG] (c) src-in-range: %s d=0x%x+%d src=0x%x+%d (in [0x%x,0x%x)) thr=%s\n"
++                              "      frames: %s" % (e["kind"], dp, ds, e["s_ptr"], e["s_size"],
++                                                     lo, hi, e["thr"], " | ".join(e["fr"])), flush=True)
++                    break
++    print("[GLM5_GPU_WRITE_LOG] matches: (a) dest-overlap=%d  (b) size~len=%d  (c) src-in-range=%d. "
++          "If all are 0, no torch tensor-copy / torch.distributed write produced the kernel image." % (n_a, n_b, n_c), flush=True)
++
++
++def set_gw_p1_hit_ranges(ranges):
++    global _GW_P1_HIT_RANGES
++    _GW_P1_HIT_RANGES = list(ranges)
++
++# module-level watch state (per-worker; workers are separate processes)
++_W_ON = False          # resolved once from GLM5_META_WATCH
++_W_RANK = -1           # this worker's rank (resolved once)
++_W_BUILD_COUNT = 0     # builds recorded for this worker
++_W_LAST_REF = None     # CPU copy of paged_kv_indptr[:num_tokens+1] at last build
++_W_LAST_NTOK = 0       # num_tokens at last build
++_W_RISING = True       # did the last build's indptr rise monotonically?
++_W_INDPR_BUF = None    # the GPU paged_kv_indptr buffer (full), set at last build
++_W_C_DIFF_BUILT = False  # set once a (c) difference is reported for the current build
++_W_EXP_SL = []         # host-staged expected seq_lens (Part 2)
++_W_EXP_QSL = []        # host-staged expected query_start_loc (Part 2)
++_W_E_DEBUG = False     # one-time debug marker (Part 2)
++
++
++def meta_watch_indptr_buf():
++    # The GPU paged_kv_indptr buffer captured at the last build (so the model
++    # layer loop can re-read it and compare against the reference without
++    # needing the attention metadata). None until the first build.
++    return _W_INDPR_BUF
++
++
++def meta_watch_last_ntok():
++    return _W_LAST_NTOK
++
++
++def _enabled():
++    global _W_ON
++    if not _W_ON:
++        _W_ON = os.environ.get("GLM5_META_WATCH") == "1"
++    return _W_ON
++
++
++def _rank():
++    global _W_RANK
++    if _W_RANK < 0:
++        try:
++            from vllm.distributed import get_tensor_model_parallel_rank
++            _W_RANK = get_tensor_model_parallel_rank()
++        except Exception:
++            try:
++                import torch.distributed as dist
++                _W_RANK = dist.get_rank() if dist.is_initialized() else 0
++            except Exception:
++                _W_RANK = 0
++    return _W_RANK
++
++
++def _pp_rank():
++    # Pipeline-parallel rank (best effort). Used only to name the segment dump
++    # like the log's worker names (Worker_PP{pp}_TP{tp}). gpu_worker.py uses
++    # get_pp_group().rank_in_group for the same purpose.
++    try:
++        from vllm.distributed import get_pp_group
++        return int(get_pp_group().rank_in_group)
++    except Exception:
++        return 0
++
++
++def _worker_name():
++    # "Worker_PP{pp}_TP{tp}" — matches the worker names vLLM logs.
++    try:
++        return "Worker_PP%d_TP%d" % (_pp_rank(), _rank())
++    except Exception:
++        return "Worker_?_?"
++
++
++def _run_label():
++    # The run label passed to the server in GLM5_RUN_LABEL (e.g. P1C3).
++    return os.environ.get("GLM5_RUN_LABEL") or ("run-%d" % os.getpid())
++
++
++def _ptr(t):
++    try:
++        if isinstance(t, torch.Tensor) and t.is_cuda:
++            return hex(t.data_ptr())
++    except Exception:
++        pass
++    return "?"
++
++
++def _host(t, n):
++    # CPU copy of the first n elements (no new device allocation). Handles both
++    # torch tensors (.detach()) and numpy arrays (.tolist()).
++    try:
++        arr = t[:n]
++        if hasattr(arr, "detach"):  # torch tensor
++            return arr.detach().cpu().tolist()
++        return arr.tolist()  # numpy
++    except Exception:
++        return None
++
++
++def meta_watch_check_e(checkpoint, expected, device, label):
++    # Checkpoint (e) [Part 2]: after a step that may write a persistent input
++    # buffer (seq_lens / query_start_loc), compare the device buffer against the
++    # expected values the host staged. Reports the FIRST step after which the
++    # buffer is wrong (first-diff index + dec/hex), once per step. Off by
++    # default; no-op when disabled. device is a torch GPU tensor, expected a list.
++    if not _enabled():
++        return
++    if torch.cuda.is_current_stream_capturing():
++        return
++    if not expected:
++        return
++    try:
++        torch.cuda.synchronize()
++        n = min(len(expected), device.numel())
++        cur = device[:n].detach().cpu().tolist()
++    except Exception:
++        return
++    for i in range(n):
++        if cur[i] != expected[i]:
++            print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s %s FIRST WRONG at index=%d "
++                  "expected=%d (0x%X) actual=%d (0x%X) devptr=%s"
++                  % (_rank(), checkpoint, label, i, expected[i], expected[i],
++                     cur[i], cur[i], _ptr(device)), flush=True)
++            return  # first wrong only
++    print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s %s OK (first %d match expected) devptr=%s"
++          % (_rank(), checkpoint, label, n, _ptr(device)), flush=True)
++
++
++def meta_watch_set_expected(sl_exp, qsl_exp):
++    # Store the host-staged expected values for seq_lens / query_start_loc so later
++    # (e) checkpoints can compare the device buffers against them. Called once per
++    # dummy run right after the host staging (before the H2D copies).
++    global _W_EXP_SL, _W_EXP_QSL, _W_E_DEBUG
++    def _to_list(x, cap):
++        try:
++            if hasattr(x, "cpu"):  # torch tensor (pinned or not)
++                return list(x.cpu().numpy().ravel()[:cap].tolist())
++            return list(np.asarray(x).ravel()[:cap].tolist())
++        except Exception as e:
++            print("[GLM5_META_WATCH] set_expected convert FAILED: %r" % (e,), flush=True)
++            return []
++    _W_EXP_SL = _to_list(sl_exp, 2048)
++    _W_EXP_QSL = _to_list(qsl_exp, 2049)
++    if not _W_E_DEBUG:
++        _W_E_DEBUG = True
++        print("[GLM5_META_WATCH] set_expected OK: sl=%d qsl=%d (e checkpoints active)"
++              % (len(_W_EXP_SL), len(_W_EXP_QSL)), flush=True)
++
++
++# ---------------------------------------------------------------------------
++# [glm5next-port-24] Part 1 forensic: at the first wrong value, locate where the
++# MessagePack host bytes (".name"/".size"/"EaSL_SM_EUl", 0xA5/0xDA) come from.
++# Only runs under GLM5_META_WATCH (== "1"); no new switch. Once per worker.
++# ---------------------------------------------------------------------------
++import sys as _p1_sys
++import time as _p1_time
++import ctypes as _p1_ctypes
++
++_P1_TASK = "/workspace/glm5next-port-26"
++_P1_FIRED = False
++_P1_REF = None        # (seg_addr, seg_size, ref_bytes) captured at the last e6
++_P1_HIP = None        # libamdhip64 handle (lazy)
++
++
++def _p1_d2h(dev_addr, nbytes):
++    # Device->host copy of nbytes bytes starting at dev_addr via hipMemcpy (kind=2).
++    global _P1_HIP
++    if _P1_HIP is None:
++        _P1_HIP = _p1_ctypes.CDLL("libamdhip64.so")
++        _P1_HIP.hipMemcpy.restype = _p1_ctypes.c_int
++        _P1_HIP.hipMemcpy.argtypes = [
++            _p1_ctypes.c_void_p, _p1_ctypes.c_void_p, _p1_ctypes.c_size_t, _p1_ctypes.c_int]
++    import numpy as _np
++    buf = _np.empty(nbytes, dtype=_np.uint8)
++    host_ptr = buf.ctypes.data
++    err = _P1_HIP.hipMemcpy(_p1_ctypes.c_void_p(host_ptr), _p1_ctypes.c_void_p(dev_addr),
++                            nbytes, 2)
++    if err != 0:
++        raise RuntimeError("hipMemcpy D2H err=%d" % err)
++    return bytes(buf)
++
++
++def _p1_seg_holding(dev_addr):
++    # Find the caching-allocator segment (from memory_snapshot) that holds dev_addr.
++    snap = torch.cuda.memory_snapshot()
++    for seg in snap:
++        if not isinstance(seg, dict):
++            continue
++        a = seg.get("address"); sz = seg.get("total_size")
++        if a is None or sz is None:
++            continue
++        if a <= dev_addr < a + sz:
++            return seg
++    return None
++
++
++def _p1_capture_e6_ref(sl_dev):
++    # Capture the whole segment holding seq_lens at the e6 checkpoint (last known good).
++    # [port-25] Part 1: ALWAYS print the segment's address and size at e6 in every
++    # start (not only at the first wrong value), so the AMD_LOG can be correlated to
++    # the segment that later gets overwritten.
++    try:
++        ptr = sl_dev.data_ptr()
++        seg = _p1_seg_holding(ptr)
++        if seg is None:
++            print("[GLM5_META_WATCH P1] e6: no segment found for seq_lens ptr=0x%x" % ptr, flush=True)
++            return
++        print("[GLM5_META_WATCH P1] e6 SEGMENT pid=%d addr=0x%x size=%d B (%.1f MiB) worker=%s runlabel=%s"
++              % (os.getpid(), seg["address"], seg["total_size"], seg["total_size"] / 1048576.0,
++                 _worker_name(), _run_label()), flush=True)
++        import numpy as _np
++        ref_bytes = _p1_d2h(seg["address"], seg["total_size"])
++        _P1_REF_LOCAL = (seg["address"], seg["total_size"], ref_bytes)
++        # store module-level
++        global _P1_REF
++        _P1_REF = _P1_REF_LOCAL
++    except Exception as e:
++        print("[GLM5_META_WATCH P1] e6 ref capture FAILED: %r" % e, flush=True)
++
++
++def _p1_fire(rank, sl_dev):
++    # Run the (i)-(vi) forensic once per worker at the first wrong value.
++    global _P1_FIRED
++    if _P1_FIRED:
++        return
++    _P1_FIRED = True
++    # [glm5next-port-24] Part 2: report the H2D count at the first wrong value.
++    try:
++        print("[GLM5_SYNC_H2D] H2D_COPY_COUNT at first wrong = %d (rank=%d, enabled=%s)"
++              % (h2d_count(), rank, _h2d_enabled()), flush=True)
++    except Exception:
++        pass
++    pid = os.getpid()
++    try:
++        ptr = sl_dev.data_ptr()
++        seg = _p1_seg_holding(ptr)
++        if seg is None:
++            print("[GLM5_META_WATCH P1] FIRE: no segment for seq_lens ptr=%x" % ptr, flush=True)
++            return
++        seg_addr, seg_size = seg["address"], seg["total_size"]
++        # (i) copy the whole current segment -> .bin
++        # [port-25] name the dump by run label + worker name (e.g. segment-P1C3-Worker_PP3_TP0.bin)
++        # so each worker's dump is unambiguous in a ten-card run.
++        os.makedirs(_P1_TASK, exist_ok=True)
++        binpath = os.path.join(_P1_TASK, "segment-%s-%s.bin" % (_run_label(), _worker_name()))
++        cur_bytes = _p1_d2h(seg_addr, seg_size)
++        with open(binpath, "wb") as f:
++            f.write(cur_bytes)
++        print("[GLM5_META_WATCH P1] (i) seg addr=0x%x size=%d B (%.1f MiB) -> %s"
++              % (seg_addr, seg_size, seg_size / 1048576.0, binpath), flush=True)
++        print("[GLM5_META_WATCH P1] (i) seq_lens ptr=0x%x (offset in seg=0x%x)"
++              % (ptr, ptr - seg_addr), flush=True)
++
++        # (ii) diff vs e6 reference
++        first = last = None
++        n_diff = 0
++        ref = _P1_REF
++        if ref is not None and ref[0] == seg_addr and len(ref[2]) == len(cur_bytes):
++            rb = ref[2]; cb = cur_bytes
++            for i in range(len(cb)):
++                if cb[i] != rb[i]:
++                    n_diff += 1
++                    if first is None:
++                        first = i
++                    last = i
++            print("[GLM5_META_WATCH P1] (ii) diff vs e6 ref: first_offset=0x%x last_offset=0x%x "
++                  "n_diff_bytes=%d (seg_size=%d)" % (first, last, n_diff, seg_size), flush=True)
++        else:
++            print("[GLM5_META_WATCH P1] (ii) NO e6 ref to diff (ref seg addr mismatch or missing); "
++                  "ref=%r" % (None if ref is None else (hex(ref[0]), ref[1])), flush=True)
++            # without a diff range, fall back to the whole seq_lens..sparse_seqlen region
++            first = last = None
++            n_diff = 0
++
++        # For (iii)/(iv) we need the differing range. If no diff (ref missing), use
++        # the seq_lens block region as a stand-in so the forensic still prints.
++        r_lo = r_hi = None
++        if first is not None:
++            r_lo, r_hi = first, last
++        else:
++            r_lo, r_hi = 0, min(1 << 20, seg_size)
++
++        # (iii) blocks overlapping the differing range
++        blocks = seg.get("blocks", [])
++        print("[GLM5_META_WATCH P1] (iii) blocks overlapping diff range [0x%x,0x%x] (seg-relative):"
++              % (r_lo, r_hi), flush=True)
++        for blk in blocks:
++            b_a = blk.get("address", 0) - seg_addr
++            b_s = blk.get("size", 0)
++            if b_a <= r_hi and b_a + b_s >= r_lo:
++                print("[GLM5_META_WATCH P1]   block offset=0x%x size=%d state=%s stream=%s"
++                      % (b_a, b_s, blk.get("state"), blk.get("stream")), flush=True)
++
++        # (iv) printable strings len>=4 in the differing range + first 64 diff bytes
++        rng = cur_bytes[r_lo:r_hi + 1]
++        print("[GLM5_META_WATCH P1] (iv) differing range bytes=%d; printable strings (len>=4, max 60):"
++              % len(rng), flush=True)
++        runs = []
++        cur = bytearray()
++        for ch in rng:
++            if 32 <= ch < 127:
++                cur.append(ch)
++            else:
++                if len(cur) >= 4:
++                    runs.append(bytes(cur).decode("latin1"))
++                cur = bytearray()
++        if len(cur) >= 4:
++            runs.append(bytes(cur).decode("latin1"))
++        for s in runs[:60]:
++            print("[GLM5_META_WATCH P1]   str: %r" % s, flush=True)
++        print("[GLM5_META_WATCH P1]   (first %d strings shown; %d total)" % (min(60, len(runs)), len(runs)), flush=True)
++        if first is not None:
++            fb = cur_bytes[first:first + 64]
++            print("[GLM5_META_WATCH P1] (iv) first 64 differing bytes (from offset 0x%x):" % first, flush=True)
++            print("[GLM5_META_WATCH P1]   " + " ".join("%02x" % b for b in fb), flush=True)
++
++        # (v) /dev/shm maps + per-file search for the first 32 differing bytes; then /proc/self/mem search
++        key32 = None
++        if first is not None:
++            key32 = cur_bytes[first:first + 32]
++            print("[GLM5_META_WATCH P1] (v) search key (first 32 differing bytes) =", flush=True)
++            print("[GLM5_META_WATCH P1]   " + " ".join("%02x" % b for b in key32), flush=True)
++        else:
++            print("[GLM5_META_WATCH P1] (v) no key32 (no diff); skipping file/memory search", flush=True)
++        maps_lines = []
++        try:
++            for ln in open("/proc/self/maps"):
++                maps_lines.append(ln.rstrip("\n"))
++        except Exception as e:
++            print("[GLM5_META_WATCH P1] (v) read /proc/self/maps FAILED %r" % e, flush=True)
++        shm_lines = [ln for ln in maps_lines if "/dev/shm" in ln]
++        print("[GLM5_META_WATCH P1] (v) /dev/shm mappings (%d):" % len(shm_lines), flush=True)
++        for ln in shm_lines:
++            print("[GLM5_META_WATCH P1]   maps: " + ln, flush=True)
++            path = ln.split()[-1]
++            if key32 and os.path.exists(path):
++                try:
++                    fdata = open(path, "rb").read()
++                    off = fdata.find(bytes(key32))
++                    if off >= 0:
++                        ctx = fdata[off:off + 64]
++                        print("[GLM5_META_WATCH P1]   *** FOUND in %s at offset %d: %s"
++                              % (path, off, " ".join("%02x" % b for b in ctx)), flush=True)
++                except Exception as e:
++                    print("[GLM5_META_WATCH P1]   read %s FAILED %r" % (path, e), flush=True)
++        # /proc/self/mem search (skip /dev/kfd, /dev/dri, >4 GiB; <=120s; max 20 hits)
++        if key32:
++            print("[GLM5_META_WATCH P1] (v) searching /proc/self/mem for key32 (<=120s, max 20 hits)...", flush=True)
++            t0 = _p1_time.time()
++            hits = []
++            try:
++                mem = open("/proc/self/mem", "rb", buffering=0)
++                for ln in maps_lines:
++                    parts = ln.split()
++                    rng2 = parts[0]
++                    perms = parts[1]
++                    name = parts[5] if len(parts) > 5 else ""
++                    if "r" not in perms:
++                        continue
++                    if "/dev/kfd" in name or "/dev/dri" in name:
++                        continue
++                    lo_s, hi_s = rng2.split("-")
++                    lo = int(lo_s, 16); hi = int(hi_s, 16)
++                    sz = hi - lo
++                    if sz > (4 << 30):
++                        continue
++                    if _p1_time.time() - t0 > 120:
++                        print("[GLM5_META_WATCH P1]   (v) 120s budget exhausted", flush=True)
++                        break
++                    try:
++                        mem.seek(lo)
++                        chunk = mem.read(sz)
++                        o = chunk.find(bytes(key32))
++                        if o >= 0:
++                            hits.append((lo + o, ln))
++                            if len(hits) >= 20:
++                                break
++                    except Exception:
++                        continue
++            except Exception as e:
++                print("[GLM5_META_WATCH P1]   (v) /proc/self/mem search FAILED %r" % e, flush=True)
++            print("[GLM5_META_WATCH P1] (v) /proc/self/mem hits: %d" % len(hits), flush=True)
++            # [glm5next-port-24] Part 3: record the Part 1 hit mapping ranges (lo,hi)
++            # so GLM5_GPU_WRITE_LOG's (c) check can match a copy whose src lies in them.
++            for (a, ln) in hits:
++                print("[GLM5_META_WATCH P1]   hit addr=0x%x  maps: %s" % (a, ln), flush=True)
++                try:
++                    lo_s, hi_s = ln.split()[0].split("-")
++                    set_gw_p1_hit_ranges(_GW_P1_HIT_RANGES + [(int(lo_s, 16), int(hi_s, 16))])
++                except Exception:
++                    pass
++
++        # (vi) thread names
++        print("[GLM5_META_WATCH P1] (vi) thread names (/proc/self/task/*/comm):", flush=True)
++        try:
++            tnames = []
++            for d in os.listdir("/proc/self/task"):
++                try:
++                    tnames.append(open("/proc/self/task/%s/comm" % d).read().strip())
++                except Exception:
++                    pass
++            from collections import Counter
++            cnt = Counter(tnames)
++            print("[GLM5_META_WATCH P1]   %d threads total; distinct: %s"
++                  % (len(tnames), " | ".join("%s x%d" % (k, v) for k, v in cnt.most_common())), flush=True)
++        except Exception as e:
++            print("[GLM5_META_WATCH P1] (vi) thread names FAILED %r" % e, flush=True)
++        print("[GLM5_META_WATCH P1] FIRE complete.", flush=True)
++        # [glm5next-port-24] Part 3: print the matching GPU writes logged during
++        # start-up (only when GLM5_GPU_WRITE_LOG is on).
++        if _gw_enabled():
++            try:
++                _gw_flush(seg_addr, seg_addr + seg_size, seg_size)
++            except Exception as e:
++                print("[GLM5_GPU_WRITE_LOG] flush FAILED: %r" % e, flush=True)
++    except Exception as e:
++        import traceback
++        print("[GLM5_META_WATCH P1] FIRE FAILED: %r\n%s" % (e, traceback.format_exc()), flush=True)
++
++
++def meta_watch_check_e2(checkpoint, sl_dev, qsl_dev):
++    # Checkpoint (e2) [Part 2]: compare the device seq_lens and query_start_loc
++    # against the host-staged expected values (set via meta_watch_set_expected).
++    # Reports the first step after which either buffer is wrong. Off by default.
++    global _W_E_DEBUG
++    if not _enabled():
++        return
++    if torch.cuda.is_current_stream_capturing():
++        if not _W_E_DEBUG:
++            _W_E_DEBUG = True
++            print("[GLM5_META_WATCH e] %s SKIPPED: stream capturing" % checkpoint, flush=True)
++        return
++    if not _W_EXP_SL:
++        print("[GLM5_META_WATCH e] %s SKIPPED: no expected (set_expected didn't run?)"
++              % checkpoint, flush=True)
++        return
++    try:
++        torch.cuda.synchronize()
++        n = min(len(_W_EXP_SL), sl_dev.numel())
++        cur = sl_dev[:n].detach().cpu().tolist()
++        # [glm5next-port-24] Part 1: at checkpoint e6 (last known good), capture the
++        # whole segment holding seq_lens as the reference for the (ii) diff. Replace
++        # it every build.
++        if "e6" in checkpoint and not _P1_FIRED:
++            _p1_capture_e6_ref(sl_dev)
++    except Exception as e:
++        print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s seq_lens read FAILED %r"
++              % (_rank(), checkpoint, e), flush=True)
++        return
++    for i in range(n):
++        if cur[i] != _W_EXP_SL[i]:
++            print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s seq_lens FIRST WRONG at index=%d "
++                  "expected=%d (0x%X) actual=%d (0x%X) devptr=%s"
++                  % (_rank(), checkpoint, i, _W_EXP_SL[i], _W_EXP_SL[i],
++                     cur[i], cur[i], _ptr(sl_dev)), flush=True)
++            _p1_fire(_rank(), sl_dev)
++            return
++    # seq_lens OK (matches expected)
++    print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s seq_lens OK devptr=%s"
++          % (_rank(), checkpoint, _ptr(sl_dev)), flush=True)
++    if qsl_dev is not None:
++        try:
++            nq = min(len(_W_EXP_QSL), qsl_dev.numel())
++            curq = qsl_dev[:nq].detach().cpu().tolist()
++        except Exception as e:
++            curq = None
++            print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s qsl read FAILED %r"
++                  % (_rank(), checkpoint, e), flush=True)
++        if curq is not None:
++            for i in range(nq):
++                if curq[i] != _W_EXP_QSL[i]:
++                    print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s query_start_loc FIRST WRONG at index=%d "
++                          "expected=%d (0x%X) actual=%d (0x%X) devptr=%s"
++                          % (_rank(), checkpoint, i, _W_EXP_QSL[i], _W_EXP_QSL[i],
++                             curq[i], curq[i], _ptr(qsl_dev)), flush=True)
++                    _p1_fire(_rank(), sl_dev)
++                    return
++            print("[GLM5_META_WATCH e] rank=%d CHECKPOINT=%s query_start_loc OK devptr=%s"
++                  % (_rank(), checkpoint, _ptr(qsl_dev)), flush=True)
++
++
++def meta_watch_a(seq_lens_host, seq_lens_dev, qsl_host, qsl_dev, num_reqs, num_tokens):
++    # Checkpoint (a): just after seq_lens and query_start_loc are copied to the
++    # GPU in _dummy_run. Synchronise, then print the host values written and the
++    # device values read back for seq_lens[:num_reqs] and query_start_loc[:num_reqs+1].
++    if not _enabled():
++        return
++    if torch.cuda.is_current_stream_capturing():
++        return
++    try:
++        torch.cuda.synchronize()
++    except Exception:
++        return
++    sl_h = _host(seq_lens_host, num_reqs)
++    sl_d = _host(seq_lens_dev, num_reqs)
++    q_h = _host(qsl_host, num_reqs + 1)
++    q_d = _host(qsl_dev, num_reqs + 1)
++    print("[GLM5_META_WATCH a] rank=%d num_reqs=%d num_tokens=%d" % (_rank(), num_reqs, num_tokens), flush=True)
++    print("[GLM5_META_WATCH a]   seq_lens host=%s  device=%s  devptr=%s" % (sl_h, sl_d, _ptr(seq_lens_dev)), flush=True)
++    print("[GLM5_META_WATCH a]   query_start_loc host=%s  device=%s  devptr=%s" % (q_h, q_d, _ptr(qsl_dev)), flush=True)
++
++
++def meta_watch_build_b(seq_lens, query_start_loc, sparse_seqlen, paged_kv_indptr,
++                       num_reqs, num_tokens, topk_tokens, window):
++    # Checkpoint (b): just after the cumsum into paged_kv_indptr. Synchronise,
++    # print the values the build saw (with device addresses) and store a CPU
++    # reference of paged_kv_indptr[:num_tokens+1]. No new device allocation.
++    if not _enabled():
++        return
++    if torch.cuda.is_current_stream_capturing():
++        return
++    try:
++        torch.cuda.synchronize()
++    except Exception:
++        return
++    global _W_BUILD_COUNT, _W_LAST_REF, _W_LAST_NTOK, _W_RISING, _W_INDPR_BUF, _W_C_DIFF_BUILT
++    r = _rank()
++    _W_BUILD_COUNT += 1
++    _W_C_DIFF_BUILT = False  # new build -> allow one (c) difference report
++    # [glm5next-port-24] Part 2: print the H2D copy count at a start-up marker
++    # (build #5) so we have the count even when no fault occurs.
++    if _W_BUILD_COUNT == 5:
++        try:
++            print("[GLM5_SYNC_H2D] H2D_COPY_COUNT at startup (build #5) = %d (rank=%d, enabled=%s)"
++                  % (h2d_count(), r, _h2d_enabled()), flush=True)
++        except Exception:
++            pass
++    n_indptr = num_tokens + 1
++    seq = _host(seq_lens, num_reqs)
++    qsl = _host(query_start_loc, num_reqs + 1)
++    sseql = _host(sparse_seqlen, num_tokens)
++    ind = _host(paged_kv_indptr, n_indptr)
++    if ind is None:
++        return
++    rising = all(ind[i] <= ind[i + 1] for i in range(len(ind) - 1))
++    _W_RISING = rising
++    # print policy: first five builds per worker, always when out of range
++    first5 = _W_BUILD_COUNT <= 5
++    oor = (
++        (seq is not None and (min(seq) < 0 or max(seq) > window))
++        or (sseql is not None and (min(sseql) < 0 or max(sseql) > topk_tokens))
++        or (not rising)
++        or (ind[-1] > num_tokens * topk_tokens)
++    )
++    if first5 or oor:
++        print("[GLM5_META_WATCH b] rank=%d build#=%d num_reqs=%d num_tokens=%d "
++              "topk=%d window=%d" % (r, _W_BUILD_COUNT, num_reqs, num_tokens,
++                                     topk_tokens, window), flush=True)
++        print("[GLM5_META_WATCH b]   seq_lens[:num_reqs]=%s ptr=%s" % (seq, _ptr(seq_lens)), flush=True)
++        print("[GLM5_META_WATCH b]   query_start_loc[:num_reqs+1]=%s ptr=%s" % (qsl, _ptr(query_start_loc)), flush=True)
++        print("[GLM5_META_WATCH b]   sparse_seqlen[:num_tokens]=%s ptr=%s" % (sseql, _ptr(sparse_seqlen)), flush=True)
++        print("[GLM5_META_WATCH b]   paged_kv_indptr[:num_tokens+1]=%s ptr=%s rising=%s" % (ind, _ptr(paged_kv_indptr), rising), flush=True)
++        # [glm5next-port-24] Part 1 backup: the e2 checkpoints did not catch it but the
++        # build's own values are out of range -> run the forensic once.
++        if oor and not _P1_FIRED:
++            _p1_fire(r, seq_lens)
++    _W_LAST_REF = ind
++    _W_LAST_NTOK = num_tokens
++    # Keep a reference to the full GPU buffer so later checkpoints (c) can
++    # re-read it and compare against the reference. No new allocation.
++    try:
++        if isinstance(paged_kv_indptr, torch.Tensor) and paged_kv_indptr.is_cuda:
++            _W_INDPR_BUF = paged_kv_indptr
++    except Exception:
++        pass
++
++
++def meta_watch_check_c(checkpoint, indptr, num_tokens, topk_tokens):
++    # Checkpoint (c): compare paged_kv_indptr[:num_tokens+1] against the build
++    # reference; on the first difference after a build, print the checkpoint,
++    # first differing index, and old/new values (dec + hex). Reports only the
++    # FIRST difference per build (so (a)/(b) order + layer + before-kernel are
++    # the meaningful sequence). Returns True if a difference was found.
++    global _W_C_DIFF_BUILT
++    if not _enabled():
++        return False
++    if torch.cuda.is_current_stream_capturing():
++        return False
++    if _W_LAST_REF is None:
++        return False
++    if _W_C_DIFF_BUILT:
++        # already reported a difference for the current build
++        return False
++    try:
++        torch.cuda.synchronize()
++    except Exception:
++        return False
++    n = min(len(_W_LAST_REF), num_tokens + 1)
++    ind = _host(indptr, n)
++    if ind is None:
++        return False
++    for i in range(n):
++        if ind[i] != _W_LAST_REF[i]:
++            _W_C_DIFF_BUILT = True
++            print("[GLM5_META_WATCH c] rank=%d CHECKPOINT=%s FIRST DIFF at index=%d "
++                  "old=%d (0x%X) new=%d (0x%X)  [build#=%d, |indptr|=%d]"
++                  % (_rank(), checkpoint, i, _W_LAST_REF[i], _W_LAST_REF[i],
++                     ind[i], ind[i], _W_BUILD_COUNT, n), flush=True)
++            return True
++    return False

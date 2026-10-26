@@ -1,0 +1,117 @@
+--- a/overlay/v1/engine/core.py
++++ b/v1/engine/core.py
+@@ -100,6 +100,22 @@
+ _R = TypeVar("_R")  # Return type for collective_rpc
+ 
+ 
++_GLM5_STEP_TIMING = os.environ.get("GLM5_STEP_TIMING") == "1"  # [claude-mtp-06]
++
++
++def _glm5_step_add(core, *kv):
++    acc = core.__dict__.setdefault("_glm5_step_acc", {})
++    for k, v in zip(kv[0::2], kv[1::2]):
++        acc[k] = acc.get(k, 0.0) + v
++    if kv[0] == "schedule":
++        core.__dict__["_glm5_step_n"] = core.__dict__.get("_glm5_step_n", 0) + 1
++        n = core._glm5_step_n
++        if n % 64 == 0:
++            logger.info("[claude-mtp-06] last 64 decode steps, ms per step: %s",
++                        ", ".join(f"{k} {1000 * v / 64:.1f}" for k, v in acc.items()))
++            acc.clear()
++
++
+ class EngineCore:
+     """Inner loop of vLLM's Engine."""
+ 
+@@ -204,6 +220,15 @@
+         # schedule and execute batches, and is required by pipeline parallelism
+         # to eliminate pipeline bubbles.
+         self.batch_queue_size = vllm_config.max_concurrent_batches
++        if (  # [claude-mtp-04] draft model + no async scheduling: one batch in flight (keeps sampled-before-draft order)
++            self.use_spec_decode
++            and not vllm_config.scheduler_config.async_scheduling
++            and self.batch_queue_size > 1
++        ):
++            logger.info("[claude-mtp-08] speculative decoding without async scheduling: batch queue %d kept for "
++                        "prompts; decode steps run one at a time and drafts are fetched only when the queue is empty",
++                        self.batch_queue_size)
++            self._glm5_spec_sync_pp = True
+         self.batch_queue: (
+             deque[tuple[Future[ModelRunnerOutput], SchedulerOutput, Future[Any]]] | None
+         ) = None
+@@ -603,7 +628,9 @@
+         # or finished and not yet removed from the batch.
+         if not self.scheduler.has_requests():
+             return {}, False
++        _t0 = time.perf_counter()  # [claude-mtp-06]
+         scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
++        _t1 = time.perf_counter()
+         future = self.model_executor.execute_model(scheduler_output, non_block=True)
+         grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+         with (
+@@ -611,8 +638,10 @@
+             self.log_error_detail(scheduler_output),
+         ):
+             model_output = future.result()
++            _t2 = time.perf_counter()
+             if model_output is None:
+                 model_output = self.model_executor.sample_tokens(grammar_output)
++            _t3 = time.perf_counter()
+ 
+         # Before processing the model output, process any aborts that happened
+         # during the model execution.
+@@ -620,6 +649,9 @@
+         engine_core_outputs = self.scheduler.update_from_output(
+             scheduler_output, model_output
+         )
++        if _GLM5_STEP_TIMING and scheduler_output.total_num_scheduled_tokens <= 16:
++            _glm5_step_add(self, "schedule", _t1 - _t0, "run", _t2 - _t1, "sample+draft", _t3 - _t2,
++                           "update", time.perf_counter() - _t3)
+         self._attach_iteration_details(engine_core_outputs, iteration_details)
+ 
+         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
+@@ -628,10 +660,18 @@
+         # When using async scheduling we can't get draft token ids in advance,
+         # so we update draft token ids in the worker process and don't
+         # need to update draft token ids here.
+-        if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
++        if (
++            self.check_for_draft_tokens
++            and not self.async_scheduling
++            and model_executed
++            and not getattr(self, "_glm5_spec_sync_pp", False)  # [claude-mtp-08]
++        ):
++            _t0 = time.perf_counter()  # [claude-mtp-06]
+             draft_token_ids = self.model_executor.take_draft_token_ids()
+             if draft_token_ids is not None:
+                 self.scheduler.update_draft_token_ids(draft_token_ids)
++            if _GLM5_STEP_TIMING:
++                _glm5_step_add(self, "fetch-drafts", time.perf_counter() - _t0)
+ 
+     def step_with_batch_queue(
+         self,
+@@ -660,7 +700,12 @@
+ 
+         model_executed = False
+         deferred_scheduler_output = None
+-        if self.scheduler.has_requests():
++        _glm5_hold = (  # [claude-mtp-08]
++            getattr(self, "_glm5_spec_sync_pp", False)
++            and len(batch_queue) > 0
++            and any(r.num_computed_tokens >= r.num_prompt_tokens for r in self.scheduler.running)
++        )
++        if self.scheduler.has_requests() and not _glm5_hold:
+             scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+             with self.log_error_detail(scheduler_output):
+                 exec_future = self.model_executor.execute_model(
+@@ -723,6 +768,10 @@
+             scheduler_output, model_output
+         )
+         self._attach_iteration_details(engine_core_outputs, iteration_details)
++        if getattr(self, "_glm5_spec_sync_pp", False) and not batch_queue:  # [claude-mtp-08]
++            _draft_ids = self.model_executor.take_draft_token_ids()
++            if _draft_ids is not None:
++                self.scheduler.update_draft_token_ids(_draft_ids)
+ 
+         # NOTE(nick): We can either handle the deferred tasks here or save
+         # in a field and do it immediately once step_with_batch_queue is

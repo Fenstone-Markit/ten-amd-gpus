@@ -1,0 +1,237 @@
+--- a/new/model_executor/layers/quantization/fp8_rdna3.py
++++ b/model_executor/layers/quantization/fp8_rdna3.py
+@@ -0,0 +1,234 @@
++# SPDX-License-Identifier: Apache-2.0
++# [claude-fp8-rdna3-04] -03 plus mixed_moe_method for GLM5_FP8_LAYERS (e.g. "3,6,9" or "3-8,12"): those MoE layers of a
++#   compressed-tensors (INT4) checkpoint get FP8 experts, loaded from the extra safetensors the mixed builder adds.
++# [claude-fp8-rdna3-03] -02 plus our own skip test: the checkpoint's modules_to_not_convert names (model.layers.N...) do not match
++#   vLLM's prefixes (language_model.model.layers.N...), so vLLM's is_layer_skipped kept BF16 modules (KDA projections, kv_b_proj,
++#   indexer) as FP8 with never-loaded scales (-3.4e38). Names are compared from 'layers.' on, fused modules shard by shard.
++# [claude-fp8-rdna3-02] -01 plus GLM5_FP8_DEBUG=1 checks.
++# [claude-fp8-rdna3-01] Block-FP8 checkpoints (128x128 weight_scale_inv, e.g. GLM-5.3-Flash) on RDNA3 (gfx1100), which has no FP8
++# hardware and no FP8 MoE backend in vLLM. Selected from Fp8Config.get_quant_method when GLM5_FP8_RDNA3=1.
++# - MoE: weights stay FP8 (repacked once per 4 bytes as [b0, b2, b1, b3]); our kernels (libfp8rdna3.so, GLM5_FP8_LIB) do decode
++#   (up to GLM5_FP8_DECODE_MAX tokens, default 32) and prefill (WMMA GEMMs in vLLM's moe_align_block_size format).
++# - Dense linears: dequantized to the model dtype at load, then a plain GEMM (small next to the experts; FP8 GEMV kernel later).
++import os
++
++import torch
++
++from vllm.logger import init_logger
++from vllm.model_executor.layers.fused_moe import RoutedExperts
++from vllm.model_executor.layers.fused_moe.fused_moe_method_base import FusedMoEMethodBase
++from vllm.model_executor.layers.fused_moe.moe_align_block_size import moe_align_block_size
++from vllm.model_executor.layers.linear import LinearBase, LinearMethodBase
++from vllm.model_executor.layers.quantization import glm5_fp8_rdna3 as _g
++from vllm.model_executor.layers.quantization.utils.quant_utils import is_layer_skipped
++from vllm.utils.torch_utils import direct_register_custom_op
++
++logger = init_logger(__name__)
++ENABLED = os.environ.get("GLM5_FP8_RDNA3", "0") == "1"
++DEBUG = os.environ.get("GLM5_FP8_DEBUG", "0") == "1"   # [claude-fp8-rdna3-02] eager-mode checks: load stats, non-finite outputs
++_dbg_seen = set()
++
++
++def _dbg(tag, t):
++    """Log once per tag if t has non-finite values (or always at load). Eager only: it syncs."""
++    if not DEBUG:
++        return
++    bad = int((~torch.isfinite(t.float())).sum())
++    key = (tag, bad > 0)
++    if bad and key not in _dbg_seen:
++        _dbg_seen.add(key)
++        logger.warning("[claude-fp8-rdna3 debug] %s: %d non-finite of %d, shape %s", tag, bad, t.numel(), tuple(t.shape))
++
++
++def _valign(ids, block, num_experts):
++    r = moe_align_block_size(ids, block, num_experts)
++    return r[0], r[1], r[2]
++
++
++def _moe_impl(x: torch.Tensor, w13: torch.Tensor, s13: torch.Tensor, w2: torch.Tensor, s2: torch.Tensor,
++              topk_weights: torch.Tensor, topk_ids: torch.Tensor, decode_max: int) -> torch.Tensor:
++    return _g.moe(x, w13, s13, w2, s2, topk_weights, topk_ids, decode_max=decode_max, align=_valign)
++
++
++def _moe_fake(x: torch.Tensor, w13: torch.Tensor, s13: torch.Tensor, w2: torch.Tensor, s2: torch.Tensor,
++              topk_weights: torch.Tensor, topk_ids: torch.Tensor, decode_max: int) -> torch.Tensor:
++    return torch.empty_like(x)
++
++
++direct_register_custom_op("glm5_fp8_rdna3_moe", op_func=_moe_impl, mutates_args=[], fake_impl=_moe_fake)
++
++
++def rdna3_quant_method(quant_config, layer, prefix):
++    """Fp8Config.get_quant_method calls this first when GLM5_FP8_RDNA3=1; None means 'use vLLM's own choice'."""
++    if not quant_config.is_checkpoint_fp8_serialized or quant_config.weight_block_size is None:
++        return None
++    skipped = _skipped(quant_config, prefix)
++    if isinstance(layer, LinearBase):
++        if skipped:
++            from vllm.model_executor.layers.linear import UnquantizedLinearMethod
++            return UnquantizedLinearMethod()
++        return Fp8RDNA3LinearMethod(quant_config)
++    if skipped:
++        return None
++    if isinstance(layer, RoutedExperts):
++        return Fp8RDNA3MoEMethod(quant_config, layer)
++    return None
++
++
++def _norm(name):
++    for p in ("language_model.model.", "model.language_model.", "language_model.", "model."):
++        if name.startswith(p):
++            return name[len(p):]
++    return name
++
++
++_ign_cache = {}
++
++
++def _skipped(quant_config, prefix):
++    """True if every shard of this module is in the checkpoint's not-converted list, False if none is; mixed raises."""
++    key = id(quant_config)
++    if key not in _ign_cache:
++        names = set(); generic = set()
++        for x in (quant_config.ignored_layers or []):
++            (names if "." in x else generic).add(_norm(x))
++        _ign_cache[key] = (names, generic)
++    names, generic = _ign_cache[key]
++    p = _norm(prefix)
++    base, _, last = p.rpartition(".")
++    shards = (quant_config.packed_modules_mapping or {}).get(last)
++    parts = [f"{base}.{s}" if base else s for s in shards] if shards else [p]
++    hits = [q in names or any(g in q.split(".") for g in generic) or q.split(".")[-1] in generic for q in parts]
++    if all(hits):
++        return True
++    if any(hits):
++        raise ValueError(f"[claude-fp8-rdna3] {prefix}: shards {parts} are partly FP8 and partly not ({hits})")
++    return False
++
++
++def fp8_layers():
++    out = set()
++    for part in os.environ.get("GLM5_FP8_LAYERS", "").replace(" ", "").split(","):
++        if not part:
++            continue
++        if "-" in part:
++            a, b = part.split("-"); out.update(range(int(a), int(b) + 1))
++        else:
++            out.add(int(part))
++    return out
++
++
++def _layer_idx(prefix):
++    import re
++    m = re.search(r"layers\.(\d+)\.", prefix + ".")
++    return int(m.group(1)) if m else -1
++
++
++def mixed_moe_method(layer, prefix):
++    if not isinstance(layer, RoutedExperts) or _layer_idx(prefix) not in fp8_layers():
++        return None
++    from vllm.model_executor.layers.quantization.fp8 import Fp8Config
++    qc = Fp8Config(is_checkpoint_fp8_serialized=True, activation_scheme="dynamic", weight_block_size=[128, 128])
++    return Fp8RDNA3MoEMethod(qc, layer)
++
++
++class Fp8RDNA3LinearMethod(LinearMethodBase):
++    """Block-FP8 linear, dequantized to the model dtype after loading."""
++
++    def __init__(self, quant_config):
++        self.quant_config = quant_config
++        self.weight_block_size = quant_config.weight_block_size
++
++    def create_weights(self, layer, input_size_per_partition, output_partition_sizes, input_size, output_size, params_dtype, **extra_weight_attrs):
++        from vllm.model_executor.layers.quantization import fp8 as F8
++        output_size_per_partition = sum(output_partition_sizes)
++        weight_loader = extra_weight_attrs.get("weight_loader")
++        layer.logical_widths = output_partition_sizes
++        layer.input_size_per_partition = input_size_per_partition
++        layer.output_size_per_partition = output_size_per_partition
++        layer.orig_dtype = params_dtype
++        layer.weight_block_size = self.weight_block_size
++        F8.validate_fp8_block_shape(layer, input_size, output_size, input_size_per_partition, output_partition_sizes, self.weight_block_size)
++        weight = F8.create_fp8_weight_parameter(output_size_per_partition, input_size_per_partition, weight_loader)
++        layer.register_parameter("weight", weight)
++        scale = F8.create_fp8_scale_parameter(F8.BlockQuantScaleParameter, output_partition_sizes, input_size_per_partition,
++                                              self.weight_block_size, weight_loader, scale_dtype=None)
++        layer.register_parameter("weight_scale_inv", scale)
++
++    def process_weights_after_loading(self, layer):
++        w, s = layer.weight.data, layer.weight_scale_inv.data.to(torch.float32)
++        bn, bk = self.weight_block_size
++        N, K = w.shape
++        full = s.repeat_interleave(bn, 0)[:N].repeat_interleave(bk, 1)[:, :K]
++        deq = (w.to(torch.float32) * full).to(layer.orig_dtype)
++        del full
++        if DEBUG:
++            logger.info("[claude-fp8-rdna3 debug] linear %s: scale min %.3e max %.3e non-finite %d zeros %d; weight max|w| %.3e non-finite %d",
++                        tuple(w.shape), float(s.min()), float(s.max()), int((~torch.isfinite(s)).sum()), int((s == 0).sum()),
++                        float(deq.float().abs().max()), int((~torch.isfinite(deq.float())).sum()))
++        layer.weight = torch.nn.Parameter(deq.contiguous(), requires_grad=False)
++        del layer.weight_scale_inv
++
++    def apply(self, layer, x, bias=None):
++        y = torch.nn.functional.linear(x, layer.weight, bias)
++        if DEBUG:
++            _dbg(f"linear in {tuple(layer.weight.shape)}", x); _dbg(f"linear out {tuple(layer.weight.shape)}", y)
++        return y
++
++
++class Fp8RDNA3MoEMethod(FusedMoEMethodBase):
++    """Block-FP8 MoE through libfp8rdna3.so. Weights and scales are created exactly as vLLM's Fp8MoEMethod creates them."""
++
++    def __init__(self, quant_config, layer):
++        super().__init__(layer.moe_config)
++        self.quant_config = quant_config
++        self.weight_block_size = quant_config.weight_block_size
++        self.block_quant = True
++        self.weight_scale_name = "weight_scale_inv"
++        assert list(self.weight_block_size) == [128, 128], f"RDNA3 FP8 MoE needs 128x128 blocks, got {self.weight_block_size}"
++        self.decode_max = int(os.environ.get("GLM5_FP8_DECODE_MAX", "32"))
++        self.moe_quant_config = None
++
++    def create_weights(self, layer, num_experts, hidden_size, intermediate_size_per_partition, params_dtype, **extra_weight_attrs):
++        from vllm.model_executor.layers.quantization.fp8 import Fp8MoEMethod
++        Fp8MoEMethod.create_weights(self, layer, num_experts, hidden_size, intermediate_size_per_partition, params_dtype, **extra_weight_attrs)
++
++    def process_weights_after_loading(self, layer):
++        for name in ("w13_weight", "w2_weight"):
++            p = getattr(layer, name)
++            assert p.data.is_contiguous() and p.data.dtype == torch.float8_e4m3fn, f"{name}: {p.data.dtype}"
++            _g.repack_(p.data.view(torch.uint8))
++        for name in ("w13_weight_scale_inv", "w2_weight_scale_inv"):
++            p = getattr(layer, name)
++            p.data = p.data.to(torch.float32).contiguous()
++        torch.cuda.current_stream().synchronize()
++        if DEBUG:
++            for name in ("w13_weight_scale_inv", "w2_weight_scale_inv"):
++                sc = getattr(layer, name).data
++                logger.info("[claude-fp8-rdna3 debug] moe %s %s: min %.3e max %.3e non-finite %d zeros %d", name, tuple(sc.shape),
++                            float(sc.min()), float(sc.max()), int((~torch.isfinite(sc)).sum()), int((sc == 0).sum()))
++        if not getattr(Fp8RDNA3MoEMethod, "_said", False):
++            Fp8RDNA3MoEMethod._said = True
++            logger.info("[claude-fp8-rdna3-01] FP8 MoE on RDNA3 kernels: w13 %s, w2 %s, decode up to %d tokens",
++                        tuple(layer.w13_weight.shape), tuple(layer.w2_weight.shape), self.decode_max)
++
++    def get_fused_moe_quant_config(self, layer):
++        return None
++
++    def maybe_make_prepare_finalize(self, routing_tables=None):
++        return None
++
++    @property
++    def is_monolithic(self) -> bool:
++        return False
++
++    def apply(self, layer, x, topk_weights, topk_ids, shared_experts, shared_experts_input):
++        assert not layer.apply_router_weight_on_input, "RDNA3 FP8 MoE: apply_router_weight_on_input is not supported"
++        assert layer.expert_map is None, "RDNA3 FP8 MoE: expert parallelism is not supported"
++        y = torch.ops.vllm.glm5_fp8_rdna3_moe(x, layer.w13_weight, layer.w13_weight_scale_inv, layer.w2_weight,
++                                              layer.w2_weight_scale_inv, topk_weights, topk_ids, self.decode_max)
++        if DEBUG:
++            _dbg(f"moe in T={x.shape[0]}", x); _dbg("moe topk_weights", topk_weights); _dbg(f"moe out T={x.shape[0]}", y)
++            if (int(topk_ids.min()) < 0 or int(topk_ids.max()) >= layer.w13_weight.shape[0]) and "ids" not in _dbg_seen:
++                _dbg_seen.add("ids"); logger.warning("[claude-fp8-rdna3 debug] topk_ids out of range: %d..%d", int(topk_ids.min()), int(topk_ids.max()))
++        return y

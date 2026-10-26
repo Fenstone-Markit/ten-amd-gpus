@@ -1,0 +1,136 @@
+--- a/image/compilation/breakable_cudagraph.py
++++ b/compilation/breakable_cudagraph.py
+@@ -25,6 +25,7 @@
+ import dataclasses
+ import functools
+ import gc
++import os
+ import threading
+ import weakref
+ from collections.abc import Callable
+@@ -53,6 +54,64 @@
+     return bool(envs.VLLM_USE_BREAKABLE_CUDAGRAPH)
+ 
+ 
++# ---------------------------------------------------------------------------
++# [glm5next-port-12] GLM5_DSA_BREAK forced-eager-break switch.
++#
++# Off by default. When set to "indexer" / "attn" / "both", the named part of the
++# DSA decode is forced to run as a REAL eager break inside a FULL decode graph:
++# at capture it is executed outside the (stream) capture via
++# BreakableCUDAGraphCapture.add_eager, and at every replay it is re-executed
++# eagerly between the graph segments. This is only possible because our FULL
++# decode graph is captured through BreakableCUDAGraphCapture (breakable is
++# auto-enabled for GLM; see config/vllm.py:1233-1255). See the mla.py wrapper,
++# which calls BreakableCUDAGraphCapture.current().force_eager(...).
++# ---------------------------------------------------------------------------
++_DSA_BREAK_REGISTRY: list[str] = []
++
++
++def glm5_dsa_break_parts() -> set[str]:
++    """Return the set of named DSA parts forced to eager breaks.
++
++    Values of the GLM5_DSA_BREAK env var: "indexer", "attn", "both" (or any
++    non-empty string; unrecognised values are logged once and treated as
++    "both" so the switch is never silently ignored). Empty / unset -> off.
++    """
++    v = (os.environ.get("GLM5_DSA_BREAK", "") or "").strip().lower()
++    if not v:
++        return set()
++    if v == "indexer":
++        return {"indexer"}
++    if v == "attn":
++        return {"attn"}
++    if v == "both":
++        return {"indexer", "attn"}
++    logger.warning_once(
++        "GLM5_DSA_BREAK=%r is not one of indexer/attn/both; treating as both.",
++        v,
++    )
++    return {"indexer", "attn"}
++
++
++def _dsa_break_log_parts() -> None:
++    """Log the break switch once, at startup (first call)."""
++    if _DSA_BREAK_REGISTRY:
++        return
++    parts = glm5_dsa_break_parts()
++    if parts:
++        _DSA_BREAK_REGISTRY.extend(sorted(parts))
++        logger.info(
++            "[glm5-dsa-break] GLM5_DSA_BREAK=%s: forcing these DSA decode parts "
++            "to real eager breaks inside the FULL decode graph: %s",
++            sorted(parts), ", ".join(sorted(parts)),
++        )
++    else:
++        _DSA_BREAK_REGISTRY.append("off")
++        logger.info(
++            "[glm5-dsa-break] GLM5_DSA_BREAK not set: no forced DSA breaks "
++            "(switch off)."
++        )
++
++
+ F = TypeVar("F", bound=Callable[..., Any])
+ 
+ 
+@@ -207,6 +266,31 @@
+         self._begin_segment()
+         return result
+ 
++    # --- [glm5next-port-12] forced eager break ----------------------------
++    def force_eager(self, fn: Callable[[], Any]) -> Any:
++        """Run ``fn`` as a REAL eager break, independent of the forward
++        context's cudagraph runtime mode.
++
++        ``add_eager`` already does the right thing (end segment, run ``fn``
++        eagerly on the capture stream, record it for replay, start a new
++        segment); the problem is that the ``eager_break_during_capture``
++        decorator short-circuits to a plain ``fn(...`` call when the runtime
++        mode is FULL, so the break never happens. This method is called
++        directly by the DSA wrapper (via the GLM5_DSA_BREAK switch) to force
++        the break regardless of mode.
++
++        At capture: ends the segment, runs ``fn`` eagerly on the capture
++        stream, records ``fn`` for replay, starts a new segment, returns the
++        result. At replay: the recorded ``fn`` is replayed in order by
++        :meth:`replay` (it runs eagerly between the graph segments).
++
++        If there is no active capture (not capturing), it just runs ``fn``
++        normally and returns the result (this is the eager / no-graph path).
++        """
++        if not self._capturing:
++            return fn()
++        return self.add_eager(fn)
++
+     # --- replay ----------------------------------------------------------
+ 
+     def replay(self) -> None:
+@@ -286,6 +370,10 @@
+         BreakableCUDAGraphWrapper._all_instances.add(self)
+ 
+         logger.info_once("Breakable CUDA graph enabled")
++        # [glm5next-port-12] log the GLM5_DSA_BREAK switch once at startup,
++        # naming the DSA decode parts that are forced eager breaks (or that
++        # the switch is off).
++        _dsa_break_log_parts()
+ 
+     # --- vllm-style attribute forwarding ---------------------------------
+ 
+@@ -394,6 +482,17 @@
+         entry.capture = capture
+         entry.output = weak_ref_tensors(output)
+ 
++        # [glm5next-port-12] log the number of eager breaks the capture
++        # recorded (the FULL decode graph normally records 0; with
++        # GLM5_DSA_BREAK set it records one per forced break).
++        logger.info_once(
++            "[glm5-dsa-break] capture for %s recorded %d eager break(s) "
++            "(%d graph segment(s)).",
++            entry.batch_descriptor,
++            capture.num_eager_breaks,
++            capture.num_graphs,
++        )
++
+         logger.debug(
+             "Captured breakable cudagraph for %s: %r",
+             entry.batch_descriptor,

@@ -1,0 +1,268 @@
+--- a/overlay/v1/core/kv_cache_utils.py
++++ b/v1/core/kv_cache_utils.py
+@@ -982,6 +982,7 @@
+     `available_memory` into `num_blocks`. Used to compute the effective KV cache
+     capacity once `num_gpu_blocks_override` is applied.
+     """
++    kv_cache_groups = _active_kv_cache_groups(kv_cache_groups)
+     if len(kv_cache_groups) == 1 and isinstance(
+         kv_cache_groups[0].kv_cache_spec, UniformTypeKVCacheSpecs
+     ):
+@@ -1420,8 +1421,11 @@
+ ) -> list[KVCacheGroupSpec] | None:
+     """Groups for GLM-5.3-Flash hybrids: MLA(+kpool indexer) + mamba.
+ 
+-    Mamba layers share the MLA layers' KV cache tensors. Indexer layers get
+-    their own KV cache tensors as indexer blocks are small.
++    Mamba (KDA) layers slot-share with the MLA (DSA) layers of their OWN
++    pipeline stage; each KDA's state page is padded per-stage to that stage's
++    local DSA page. KDA layers in a stage that holds no DSA cannot slot-share
++    and are emitted as a separate per-layer group (padded to the model-wide
++    MLA page so the general per-layer allocation stays page-uniform).
+     """
+     mamba_specs = {k: v for k, v in kv_cache_spec.items() if isinstance(v, MambaSpec)}
+     tail_specs = {
+@@ -1463,33 +1467,104 @@
+         assert tail_uniform is not None
+         tail_group = KVCacheGroupSpec(list(padded_tail_specs), tail_uniform)
+ 
+-    any_mamba = next(iter(mamba_specs.values()))
+-    assert all(spec == any_mamba for spec in mamba_specs.values())
+-    if any_mamba.real_page_size_bytes > mla_page:
+-        raise ValueError(
++    # Split the KDA layers by pipeline stage. A KDA can slot-share only with
++    # the DSA of its own stage.
++    pp_size = vllm_config.parallel_config.pipeline_parallel_size
++    total_layers = vllm_config.model_config.get_total_num_hidden_layers()
++    from vllm.distributed.utils import get_pp_indices
++    from vllm.model_executor.models.utils import extract_layer_index
++
++    def _stage_of(layer_name: str) -> int:
++        li = extract_layer_index(layer_name)
++        if li >= total_layers:
++            return pp_size - 1
++        for rank in range(pp_size):
++            s, e = get_pp_indices(total_layers, rank, pp_size)
++            if s <= li < e:
++                return rank
++        return pp_size - 1
++
++    dsa_by_stage = {
++        r: {n for n, s in mla_specs.items()
++            if s.compress_ratio == 1 and _stage_of(n) == r}
++        for r in range(pp_size)
++    }
++    slot_share_mamba: dict[str, KVCacheSpec] = {}
++    solo_mamba: dict[str, KVCacheSpec] = {}
++    for name, spec in mamba_specs.items():
++        if dsa_by_stage[_stage_of(name)]:
++            slot_share_mamba[name] = spec
++        else:
++            solo_mamba[name] = spec
++
++    # The invariant the old ``all(spec == any_mamba)`` asserted: every
++    # slot-sharing KDA layer is an identical layer kind. Compare the state
++    # IDENTITY, not the whole frozen dataclass: ``page_size_padded`` is set
++    # per PP stage to that stage's local DSA page (platforms/interface.py), so
++    # it legitimately differs across stages under pipeline parallelism. The
++    # real state (shape/dtype/params) must be identical for a shared MLA slot.
++    if slot_share_mamba:
++        any_mamba = next(iter(slot_share_mamba.values()))
++        _identity = lambda s: (
++            s.shapes, s.dtypes, s.block_size, s.mamba_type,
++            s.mamba_cache_mode, s.num_speculative_blocks, s.real_page_size_bytes,
++        )
++        assert all(_identity(s) == _identity(any_mamba)
++                   for s in slot_share_mamba.values()), (
++            "KDA (mamba) layers in slot-sharing stages have differing state "
++            "shapes/dtypes; they cannot share an MLA slot"
++        )
++        assert any_mamba.real_page_size_bytes <= mla_page, (
+             f"the mamba state page ({any_mamba.real_page_size_bytes} bytes) "
+             f"does not fit the MLA page ({mla_page} bytes); increase tensor "
+             "parallelism or use a wider KV cache dtype"
+         )
+-    padded_specs: dict[str, KVCacheSpec] = {
+-        name: replace(any_mamba, page_size_padded=mla_page) for name in mamba_specs
+-    }
+-    num_groups = _pp_balanced_mamba_group_count(
+-        vllm_config, list(mamba_specs), mla_names
+-    )
+-    if num_groups is None:
+-        raise ValueError(
+-            "a pipeline stage has mamba layers but no MLA layer to share "
+-            "slots with; realign the stage boundaries (VLLM_PP_LAYER_PARTITION)"
++    for name, spec in solo_mamba.items():
++        assert spec.real_page_size_bytes <= mla_page, (
++            f"KDA state page ({spec.real_page_size_bytes} bytes) for {name} does "
++            f"not fit the MLA page ({mla_page} bytes); increase tensor parallelism "
++            "or use a wider KV cache dtype"
+         )
+-    mamba_grouped_names: list[list[str]] = [[] for _ in range(num_groups)]
+-    for k, name in enumerate(mamba_specs):
+-        mamba_grouped_names[k % num_groups].append(name)
+-    return (
+-        [KVCacheGroupSpec(list(attn_specs), uniform_spec)]
+-        + ([tail_group] if tail_group is not None else [])
+-        + create_kv_cache_group_specs(padded_specs, mamba_grouped_names)
+-    )
++
++    groups: list[KVCacheGroupSpec] = []
++    if slot_share_mamba:
++        num_groups = max(1, cdiv(len(slot_share_mamba), max(1, len(mla_names))))
++        # Pad each slot-sharing KDA to its own stage's local DSA page.
++        padded_specs: dict[str, KVCacheSpec] = {}
++        for name, spec in slot_share_mamba.items():
++            stage_mla = [
++                mla_specs[n].page_size_bytes
++                for n in mla_names
++                if _stage_of(n) == _stage_of(name)
++            ]
++            local_page = stage_mla[0] if stage_mla else mla_page
++            padded_specs[name] = replace(spec, page_size_padded=local_page)
++        mamba_grouped_names: list[list[str]] = [[] for _ in range(num_groups)]
++        for k, name in enumerate(slot_share_mamba):
++            mamba_grouped_names[k % num_groups].append(name)
++        groups.append(KVCacheGroupSpec(list(attn_specs), uniform_spec))
++        if tail_group is not None:
++            groups.append(tail_group)
++        groups.extend(create_kv_cache_group_specs(padded_specs, mamba_grouped_names))
++    else:
++        # No slot-sharing KDA at all (e.g. every stage is mamba-only or there
++        # are no DSA layers): the attention/tail groups alone, plus solo groups.
++        groups.append(KVCacheGroupSpec(list(attn_specs), uniform_spec))
++        if tail_group is not None:
++            groups.append(tail_group)
++
++    # Mamba-only stages: one per-layer group, padded to the model-wide MLA
++    # page so the general per-layer allocation stays page-uniform.
++    if solo_mamba:
++        solo_padded = {
++            name: replace(spec, page_size_padded=mla_page)
++            for name, spec in solo_mamba.items()
++        }
++        groups.extend(create_kv_cache_group_specs(solo_padded, [[n] for n in solo_mamba]))
++
++    if not groups:
++        return None
++    return groups
+ 
+ 
+ def _glm5_next_tensor_layout(
+@@ -1582,6 +1657,20 @@
+     )
+ 
+ 
++def _active_kv_cache_groups(
++    kv_cache_groups: list[KVCacheGroupSpec],
++) -> list[KVCacheGroupSpec]:
++    """Groups that actually own layers on this worker.
++
++    Under pipeline parallelism the projected group list keeps every global
++    group (so per-request block_ids / block tables stay index-aligned), but
++    groups whose layers all live on other stages have no local layers and must
++    be excluded from per-worker memory math (their page size can differ and
++    would otherwise break the per-layer page-uniformity check).
++    """
++    return [g for g in kv_cache_groups if g.layer_names]
++
++
+ def get_kv_cache_config_from_groups(
+     vllm_config: VllmConfig,
+     kv_cache_groups: list[KVCacheGroupSpec],
+@@ -1607,26 +1696,41 @@
+             kv_cache_groups=kv_cache_groups,
+         )
+ 
++    # Under PP the projected group list keeps every global group (so the
++    # returned config -- and hence per-request block_ids / block tables -- stays
++    # index-aligned across stages), but groups whose layers all live on other
++    # stages have no local layers and must be excluded from the per-worker
++    # memory math (their page size can differ and would break the per-layer
++    # page-uniformity check). Compute over the active groups; return the full
++    # list.
++    groups_for_math = _active_kv_cache_groups(kv_cache_groups)
++    if len(groups_for_math) == 0:
++        return KVCacheConfig(
++            num_blocks=1,
++            kv_cache_tensors=[],
++            kv_cache_groups=kv_cache_groups,
++        )
++
+     # Determine how model runners should initialize the KV cache tensors.
+-    if len(kv_cache_groups) == 1 and isinstance(
+-        kv_cache_groups[0].kv_cache_spec, UniformTypeKVCacheSpecs
++    if len(groups_for_math) == 1 and isinstance(
++        groups_for_math[0].kv_cache_spec, UniformTypeKVCacheSpecs
+     ):
+         # Special case: all layers have the same type of KV cache but with
+         # different hidden sizes. Allocate different amount of memory for each
+         # layer based on its hidden size.
+         num_blocks = (
+-            available_memory // kv_cache_groups[0].kv_cache_spec.page_size_bytes
++            available_memory // groups_for_math[0].kv_cache_spec.page_size_bytes
+         )
+         num_blocks = may_override_num_blocks(vllm_config, num_blocks)
+-        per_layer_specs = kv_cache_groups[0].kv_cache_spec.kv_cache_specs
++        per_layer_specs = groups_for_math[0].kv_cache_spec.kv_cache_specs
+         kv_cache_tensors = [
+             KVCacheTensor(
+                 size=per_layer_specs[layer_name].page_size_bytes * num_blocks,
+                 shared_by=[layer_name],
+             )
+-            for layer_name in kv_cache_groups[0].layer_names
++            for layer_name in groups_for_math[0].layer_names
+         ]
+-    elif (glm5n := _glm5_next_tensor_layout(kv_cache_groups)) is not None:
++    elif (glm5n := _glm5_next_tensor_layout(groups_for_math)) is not None:
+         # GLM-5.3-Flash hybrid slot sharing: one tensor per MLA layer, co-owned
+         # by that MLA layer and one mamba layer from each mamba group; kpool
+         # indexer layers get per-layer tensors that are ALSO co-owned by their
+@@ -1674,11 +1778,11 @@
+             )
+             for i in range(len(idx_names))
+         ]
+-    elif _use_packed_kv_cache_config(vllm_config, kv_cache_groups):
++    elif _use_packed_kv_cache_config(vllm_config, groups_for_math):
+         # DeepSeek V4 uses the packed layout by default. Other multi-group
+         # layouts can opt in with --enable-cross-layers.
+         num_blocks, kv_cache_tensors = _get_kv_cache_config_packed(
+-            vllm_config, kv_cache_groups, available_memory
++            vllm_config, groups_for_math, available_memory
+         )
+     else:
+         # General case:
+@@ -1689,10 +1793,10 @@
+         # (sw.1, padding) will be: (group_size = 2)
+         # full.0, sw.0, sw.1: share a Tensor with size=available_memory//2
+         # full.1, sw.2: share another Tensor with size=available_memory//2
+-        group_size = max(len(group.layer_names) for group in kv_cache_groups)
++        group_size = max(len(group.layer_names) for group in groups_for_math)
+ 
+         page_size = get_uniform_page_size(
+-            [group.kv_cache_spec for group in kv_cache_groups]
++            [group.kv_cache_spec for group in groups_for_math]
+         )
+         assert group_size > 0, "group_size must be greater than 0"
+         num_blocks = get_num_blocks(
+@@ -1701,9 +1805,9 @@
+         kv_cache_tensors = []
+         for i in range(group_size):
+             shared_by = []
+-            for j in range(len(kv_cache_groups)):
+-                if i < len(kv_cache_groups[j].layer_names):
+-                    shared_by.append(kv_cache_groups[j].layer_names[i])
++            for j in range(len(groups_for_math)):
++                if i < len(groups_for_math[j].layer_names):
++                    shared_by.append(groups_for_math[j].layer_names[i])
+             kv_cache_tensors.append(
+                 KVCacheTensor(size=page_size * num_blocks, shared_by=shared_by)
+             )
+@@ -2133,6 +2237,7 @@
+     model has 8 full attention layers and 9 sliding window layers, they will
+     be padded to 9 full + 9 sliding window for uniform group sizes.
+     """
++    kv_cache_groups = _active_kv_cache_groups(kv_cache_groups)
+     if not kv_cache_groups:
+         return 0
+ 

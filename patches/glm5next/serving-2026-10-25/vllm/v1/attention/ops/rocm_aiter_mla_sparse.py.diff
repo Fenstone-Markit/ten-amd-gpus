@@ -1,0 +1,218 @@
+--- a/overlay/v1/attention/ops/rocm_aiter_mla_sparse.py
++++ b/v1/attention/ops/rocm_aiter_mla_sparse.py
+@@ -1,3 +1,4 @@
++import os  # [claude-mqa-01]
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ import functools
+@@ -16,6 +17,7 @@
+ from vllm.utils.torch_utils import LayerNameType
+ from vllm.v1.attention.backends.mla.indexer import DeepseekV32IndexerMetadata
+ from vllm.v1.attention.ops.common import pack_seq_triton, unpack_seq_triton
++from vllm.v1.attention.ops.glm5_meta_watch import meta_watch_check_c
+ from vllm.v1.worker.workspace import current_workspace_manager
+ 
+ if current_platform.is_rocm():
+@@ -237,6 +239,51 @@
+     grid = (num_tokens,)
+     k_fp8_scale = k_fp8_scale.view(torch.float32)
+     layout = "NORMAL" if block_size == 1 else "SHUFFLE"
++    # [glm5next-port-17] Host-side index audit of this launch, gated on GLM5_DSA_AUDIT
++    # (off by default; the audit is also behind GLM5_DSA_BREAK per the brief, but a
++    # separate opt-in keeps it from adding a per-launch DtoH sync to every run).
++    # Computes the largest index this kernel will READ from the kv-cache and WRITE
++    # to the fp8 outputs, from the block table / seqlens / block size / grid, and
++    # prints the first launch where one exceeds the corresponding tensor size.
++    import os as _os
++    if _os.environ.get("GLM5_DSA_AUDIT"):
++        try:
++            _seq = cu_seqlen.detach().to(torch.int64).cpu()
++            _bt = block_table.detach().to(torch.int64).cpu()
++            _B = int(_seq.shape[0]) - 1
++            _stride = int(k_cache_value.stride(0))
++            _blk_w = int(_bt.shape[1]) if _bt.dim() > 1 else 0
++            _max_bi = -1
++            _nvalid = 0
++            for _b in range(_B):
++                _s = int(_seq[_b]); _e = int(_seq[_b + 1])
++                if _e <= _s:
++                    continue
++                _n = _e - _s
++                _bti = torch.arange(_n) // int(block_size)
++                _bti = _bti[_bti < _blk_w]
++                if _bti.numel() == 0:
++                    continue
++                _ids = _bt[_b][_bti]
++                _ids = _ids[_ids >= 0]
++                if _ids.numel():
++                    _nvalid += int(_ids.numel())
++                    _max_bi = max(_max_bi, int(_ids.max()))
++            _total = int(k_cache_value.numel())
++            _max_read = (_max_bi + 1) * _stride if _max_bi >= 0 else 0
++            _max_write = int(num_tokens) * int(head_dim)
++            _fp8_total = int(k_fp8.numel())
++            _exceed = (_max_bi >= int(num_blocks)) or (_max_read > _total) or (_max_write > _fp8_total)
++            print(
++                "[DSA-GATHER-AUDIT] B=%d num_tokens=%d num_blocks=%d block_size=%d head_dim=%d "
++                "max_block_id=%d (valid tokens=%d) | kv_cache total=%d max_read_idx=%d | "
++                "fp8 total=%d max_write=%d | EXCEEDS_BOUNDS=%s"
++                % (_B, num_tokens, int(num_blocks), int(block_size), int(head_dim),
++                   _max_bi, _nvalid, _total, _max_read, _fp8_total, _max_write,
++                   "YES" if _exceed else "no"),
++                flush=True)
++        except Exception as _e:  # noqa: BLE001
++            print("[DSA-GATHER-AUDIT] audit error: %r" % (_e,), flush=True)
+     _cp_gather_indexer_quant_cache_kernel[grid](
+         k_cache_value,
+         k_cache_scale,
+@@ -869,6 +916,9 @@
+         fp8_mqa_logits = aiter_mqa_logits_module.fp8_mqa_logits
+         return fp8_mqa_logits(q, k_fp8, scale, weights, cu_seqlen_ks, cu_seqlen_ke)
+     else:
++        if os.environ.get("GLM5_MQA_TRITON", "0") == "1":  # [claude-mqa-01]
++            from vllm.v1.attention.ops.glm5_mqa_logits_rdna3 import fp8_mqa_logits_rdna3
++            return fp8_mqa_logits_rdna3(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke)
+         return fp8_mqa_logits_torch(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke)
+ 
+ 
+@@ -1480,6 +1530,96 @@
+     return x.to(torch.int32).contiguous()
+ 
+ 
++# [glm5next-port-22] GLM5_CAPTURE_AUDIT: diagnostic audit of the ragged prefill
++# sparse-attention kernel inputs, gated on an env switch (off by default, read at
++# call time). No behaviour change when off. See part3.md.
++_glm5_capture_audit_count = 0
++_glm5_capture_audit_enabled = False
++
++
++def _gc_aud_enabled():
++    global _glm5_capture_audit_enabled
++    if not _glm5_capture_audit_enabled:
++        import os as _gca_os
++        _glm5_capture_audit_enabled = _gca_os.environ.get("GLM5_CAPTURE_AUDIT") == "1"
++    return _glm5_capture_audit_enabled
++
++
++def _gc_aud_info(t):
++    try:
++        if not (isinstance(t, torch.Tensor) and t.is_cuda and t.numel() > 0):
++            return "non-cuda-or-empty"
++        n = int(t.numel())
++        s = int(t.element_size())
++        return f"shape={list(t.shape)} dtype={t.dtype} nbytes={n*s} ptr=[{t.data_ptr()},{t.data_ptr()+n*s})"
++    except Exception as e:
++        return f"(info failed: {e})"
++
++
++def _gc_aud_stats(t):
++    try:
++        if not (isinstance(t, torch.Tensor) and t.is_cuda and t.numel() > 0):
++            return "non-cuda-or-empty"
++        c = t.detach().cpu().to(torch.int64)
++        return f"shape={list(t.shape)} min={int(c.min())} max={int(c.max())} numel={int(t.numel())}"
++    except Exception as e:
++        return f"(stats failed: {e})"
++
++
++_glm5_ragged_indptr_clamp_cache = False
++
++
++def _glm5_ragged_indptr_clamp_enabled():
++    global _glm5_ragged_indptr_clamp_cache
++    if not _glm5_ragged_indptr_clamp_cache:
++        import os as _gri_os
++        _glm5_ragged_indptr_clamp_cache = _gri_os.environ.get(
++            "GLM5_RAGGED_INDPTR_CLAMP"
++        ) == "1"
++    return _glm5_ragged_indptr_clamp_cache
++
++
++def _glm5_capture_audit(
++    q, kv, indices, indptr, attn_sink, out, k_scale,
++    num_queries, num_heads, kv_rows, scale,
++):
++    """Print the inputs to _sparse_attn_prefill_ragged_kernel (first 20 calls).
++    Skips any host read while a CUDA graph is being captured. No behaviour change."""
++    global _glm5_capture_audit_count
++    try:
++        if not _gc_aud_enabled():
++            return
++        if _glm5_capture_audit_count >= 20:
++            return
++        if torch.cuda.is_current_stream_capturing():
++            _glm5_capture_audit_count += 1
++            print("[GLM5_CAPTURE_AUDIT] ragged prefill kernel call #%d: SKIP (graph capturing)" % _glm5_capture_audit_count, flush=True)
++            return
++        _glm5_capture_audit_count += 1
++        kv2 = kv.squeeze(1)
++        print(
++            "[GLM5_CAPTURE_AUDIT] ragged prefill kernel call #%d: "
++            "num_queries=%d num_heads=%d head_dim=%d kv_rows(num_kv)=%d kv_rows_full=%d scale=%r"
++            % (_glm5_capture_audit_count, num_queries, num_heads, q.shape[2],
++               kv_rows, int(kv2.shape[0]), scale),
++            flush=True)
++        print("  q        : " + _gc_aud_info(q), flush=True)
++        print("  kv       : " + _gc_aud_info(kv2) + " (kv2 = kv.squeeze(1))", flush=True)
++        print("  indices  : " + _gc_aud_info(indices), flush=True)
++        print("  indices  : " + _gc_aud_stats(indices), flush=True)
++        print("  indptr   : " + _gc_aud_info(indptr), flush=True)
++        print("  indptr   : " + _gc_aud_stats(indptr), flush=True)
++        i = indptr.detach().cpu().to(torch.int64)
++        e = i[-1].item()
++        l = int(indices.numel())
++        print(
++            "[GLM5_CAPTURE_AUDIT] call #%d: indptr[0]=%d indptr[last]=%d  |indices|=%d  OOB=%s (indptr[-1] > |indices|)"
++            % (_glm5_capture_audit_count, int(i[0]), int(e), l, "YES" if int(e) > l else "no"),
++            flush=True)
++    except Exception as e:
++        print("[GLM5_CAPTURE_AUDIT] FAILED: %r" % (e,), flush=True)
++
++
+ @triton.jit
+ def _sparse_attn_prefill_ragged_kernel(
+     q_ptr,
+@@ -2212,6 +2352,13 @@
+ 
+     indices = _as_int32_contiguous_1d(indices)
+     indptr = _as_int32_contiguous_1d(indptr)
++    # [glm5next-port-22] GLM5_RAGGED_INDPTR_CLAMP (off by default): the kernel reads
++    # kv_indices[kv_start:k_end] where k_end = indptr[query+1]. If indptr carries a
++    # garbage value past the buffer (see part3.md), that read is out of bounds.
++    # Clamping indptr to [0, |indices|] is a no-op on a correct ragged layout
++    # (indptr[-1] == |indices|, monotone) and bounds every indices read.
++    if _glm5_ragged_indptr_clamp_enabled():
++        indptr = torch.clamp(indptr, min=0, max=int(indices.numel()))
+     has_attn_sink = attn_sink is not None
+     if attn_sink is None:
+         attn_sink = torch.empty(1, device=q.device, dtype=torch.float32)
+@@ -2221,8 +2368,11 @@
+     # [glm5-noaiter P3] fp8 KV: pass the per-tensor dequant scale to the kernel
+     # (only read when the cache dtype is fp8). A host-side scalar default keeps
+     # the bf16/fp16 path untouched.
++    # [glm5next-port-02] torch.tensor(1.0, device=...) performs a host->device
++    # copy that is illegal during CUDA-graph capture (P7 7d). Allocate the scalar
++    # directly on the device instead: no copy, capture-safe, same value.
+     if k_scale is None:
+-        k_scale = torch.tensor(1.0, dtype=torch.float32, device=q.device)
++        k_scale = torch.ones((), dtype=torch.float32, device=q.device)
+     k_scale = k_scale.contiguous()
+ 
+     num_queries, num_heads, head_dim = q.shape
+@@ -2241,6 +2391,16 @@
+     block_k = 16 if head_dim >= 256 else 32
+     num_warps = 4
+     out = torch.empty_like(q, dtype=torch.bfloat16)
++    # [glm5next-port-22] GLM5_CAPTURE_AUDIT: audit the ragged prefill kernel inputs
++    # immediately before the launch (host reads skipped while a graph is captured).
++    _glm5_capture_audit(
++        q, kv, indices, indptr, attn_sink, out, k_scale,
++        num_queries, num_heads, kv.shape[0], float(scale),
++    )
++    # [glm5next-port-23] GLM5_META_WATCH (c): immediately before the ragged
++    # prefill kernel launch, compare indptr[:num_queries+1] against the build
++    # reference. Reports only the first difference per build. Off by default.
++    meta_watch_check_c("before ragged kernel", indptr, num_queries, 0)
+     _sparse_attn_prefill_ragged_kernel[(num_queries, triton.cdiv(num_heads, block_h))](
+         q,
+         kv,

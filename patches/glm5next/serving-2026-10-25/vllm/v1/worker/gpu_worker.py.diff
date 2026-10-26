@@ -1,0 +1,348 @@
+--- a/image/v1/worker/gpu_worker.py
++++ b/v1/worker/gpu_worker.py
+@@ -5,6 +5,11 @@
+ import gc
+ import os
+ import time
++if os.environ.get("GLM5_TB_SIGNAL") == "1":  # [claude-mtp-03] stack dump every 90 s (debug)
++    import faulthandler as _glm5_fh, signal as _glm5_sig
++    os.makedirs("/cache/tb", exist_ok=True)
++    _glm5_tb_file = open(f"/cache/tb/tb-{os.getpid()}.txt", "w")
++    _glm5_fh.dump_traceback_later(90, repeat=True, file=_glm5_tb_file)
+ from collections.abc import Callable
+ from contextlib import AbstractContextManager, contextmanager, nullcontext
+ from datetime import timedelta
+@@ -86,6 +91,8 @@
+ from .utils import request_memory
+ 
+ logger = init_logger(__name__)
++_GLM5_STAGE_TIMING = os.environ.get("GLM5_STAGE_TIMING") == "1"  # [claude-stt-01]
++_GLM5_MODULE_TIMING = os.environ.get("GLM5_MODULE_TIMING") == "1"  # [claude-mt-01]
+ 
+ if TYPE_CHECKING:
+     from vllm.device_allocator.sleep_mode_backend import SleepModeBackend
+@@ -381,6 +388,56 @@
+                 current_platform.dist_backend,
+             )
+ 
++            if os.environ.get("GLM5_PREWARM_SCAN") == "1":
++                # [glm5next-port-26] Load the scan-kernel code object now, while memory
++                # is free, so its first use in the metadata build is not a deferred
++                # load under memory pressure (ports 24 and 25).
++                for _dt in (torch.int32, torch.int64, torch.bool):
++                    for _n in (2, 4096, 1 << 20):
++                        _x = torch.ones(_n, dtype=_dt, device=self.device)
++                        torch.cumsum(_x, 0)
++                        _buf = torch.zeros(_n + 1, dtype=torch.int64 if _dt == torch.bool else _dt, device=self.device)
++                        torch.cumsum(_x, 0, out=_buf[1:_n + 1])
++                    _m = torch.ones(64, 64, dtype=_dt, device=self.device)
++                    torch.cumsum(_m, 0)
++                    torch.cumsum(_m, 1)
++                torch.cuda.synchronize(self.device)
++                del _x, _buf, _m
++                logger.info("[GLM5_PREWARM_SCAN] scan kernels loaded on %s", self.device)
++
++            if os.environ.get("GLM5_CANARY") == "1":
++                # [claude-canary-02] Fill the start of the PyTorch small pool with four marked
++                # 512 KiB blocks (2 MiB, one expandable-segment page) right after the prewarm,
++                # before any model or metadata buffer exists, and check them before and after
++                # every step. Port-24 found the first 2 MiB of the small-pool segment overwritten
++                # by a GPU code object; a hit here shows the same write during serving.
++                self._glm5_canary = []
++                for _i in range(4):
++                    _t = (torch.arange(131072, dtype=torch.int32, device=self.device) * 7 + 0x5A5A0000 + _i)
++                    self._glm5_canary.append((_t, _t.cpu().numpy().copy()))
++                torch.cuda.synchronize(self.device)
++                self._glm5_canary_checks = 0
++                _ptrs = [c[0].data_ptr() for c in self._glm5_canary]
++                _seg = None
++                try:
++                    for _s in torch.cuda.memory_snapshot():
++                        if _s.get("device") == self.device.index and _s["address"] <= min(_ptrs) < _s["address"] + _s["total_size"]:
++                            _seg = _s
++                except Exception as _e:
++                    logger.warning("[GLM5_CANARY] snapshot failed: %r", _e)
++                if _seg is not None:
++                    logger.info("[GLM5_CANARY] armed on %s: blocks at %s; segment 0x%x size %d pool %s; canary offsets %s",
++                                self.device, [hex(x) for x in _ptrs], _seg["address"], _seg["total_size"],
++                                _seg.get("segment_type"), [x - _seg["address"] for x in _ptrs])
++                else:
++                    logger.info("[GLM5_CANARY] armed on %s: blocks at %s; segment not found", self.device, [hex(x) for x in _ptrs])
++
++            if os.environ.get("GLM5_MEMSNAP_RANK", "") != "" and int(os.environ["GLM5_MEMSNAP_RANK"]) == self.rank:
++                # [claude-memsnap-01] Record this worker's PyTorch allocation history with Python stacks and save snapshots
++                # (on every allocation retry, and periodically) to GLM5_MEMSNAP_DIR, to see what fills a middle-stage card.
++                from vllm.v1.worker import glm5_memsnap
++                glm5_memsnap.start(self.rank, self.device, logger)
++
+             if self.use_v2_model_runner:
+                 logger.info_once("Using V2 Model Runner")
+ 
+@@ -471,29 +528,41 @@
+         """
+         maybe_apply_startup_plan(self)
+ 
+-        if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
+-            # still need a profile run which compiles the model for
+-            # max_num_batched_tokens
+-            self.model_runner.profile_run()
++        # [glm5next-port-14] GLM5_PROFILE_ALWAYS=1 (off by default): when
++        # kv_cache_memory_bytes is set, still run the full memory profile and
++        # every step it gates, then size the KV cache from kv_cache_memory_bytes
++        # as given (see the return at the end of this function). Off -> the
++        # kv-bytes branch returns early exactly as before.
++        _profile_always = (os.environ.get("GLM5_PROFILE_ALWAYS", "") == "1")
+ 
+-            msg = (
+-                f"Initial free memory {format_gib(self.init_snapshot.free_memory)} "
+-                f"GiB, reserved {format_gib(kv_cache_memory_bytes)} GiB memory for "
+-                "KV Cache as specified by kv_cache_memory_bytes config and "
+-                "skipped memory profiling. This does not respect the "
+-                "gpu_memory_utilization config. Only use kv_cache_memory_bytes "
+-                "config when you want manual control of KV cache memory "
+-                "size. If OOM'ed, check the difference of initial free "
+-                "memory between the current run and the previous run "
+-                "where kv_cache_memory_bytes is suggested and update it "
+-                "correspondingly."
+-            )
+-            logger.info(msg)
+-            return reserve_mm_ipc_gpu_memory(
+-                kv_cache_memory_bytes,
+-                self.model_config.multimodal_config,
+-                getattr(self.parallel_config, "_api_process_count", 1),
+-            )
++        if kv_cache_memory_bytes := self.cache_config.kv_cache_memory_bytes:
++            if not _profile_always:
++                # still need a profile run which compiles the model for
++                # max_num_batched_tokens
++                self.model_runner.profile_run()
++
++                msg = (
++                    f"Initial free memory {format_gib(self.init_snapshot.free_memory)} "
++                    f"GiB, reserved {format_gib(kv_cache_memory_bytes)} GiB memory for "
++                    "KV Cache as specified by kv_cache_memory_bytes config and "
++                    "skipped memory profiling. This does not respect the "
++                    "gpu_memory_utilization config. Only use kv_cache_memory_bytes "
++                    "config when you want manual control of KV cache memory "
++                    "size. If OOM'ed, check the difference of initial free "
++                    "memory between the current run and the previous run "
++                    "where kv_cache_memory_bytes is suggested and update it "
++                    "correspondingly."
++                )
++                logger.info(msg)
++                return reserve_mm_ipc_gpu_memory(
++                    kv_cache_memory_bytes,
++                    self.model_config.multimodal_config,
++                    getattr(self.parallel_config, "_api_process_count", 1),
++                )
++            # GLM5_PROFILE_ALWAYS: fall through to the normal profile path below.
++            # It runs profile_run + profile_cudagraph_memory + the
++            # available_kv_cache_memory_bytes computation, then this function
++            # overrides the returned KV size with kv_cache_memory_bytes.
+ 
+         # Execute a forward pass with dummy inputs to profile the memory usage
+         # of the model.
+@@ -604,6 +673,20 @@
+                     suggested_util,
+                 )
+ 
++        # [glm5next-port-14] GLM5_PROFILE_ALWAYS: the profile ran (above); use the
++        # user-given KV size instead of the measured available_kv_cache_memory_bytes.
++        if _profile_always and kv_cache_memory_bytes:
++            logger.info(
++                "[glm5-profile-always] memory profile ran; using KV cache size from "
++                "kv_cache_memory_bytes = %s GiB (measured available would be %s GiB).",
++                format_gib(kv_cache_memory_bytes),
++                format_gib(self.available_kv_cache_memory_bytes),
++            )
++            return reserve_mm_ipc_gpu_memory(
++                int(kv_cache_memory_bytes),
++                self.model_config.multimodal_config,
++                getattr(self.parallel_config, "_api_process_count", 1),
++            )
+         return reserve_mm_ipc_gpu_memory(
+             int(self.available_kv_cache_memory_bytes),
+             self.model_config.multimodal_config,
+@@ -1009,16 +1092,158 @@
+ 
+     @torch.inference_mode()
+     @with_gpu_sync_check
+-    def sample_tokens(
++    def _glm5_sample_tokens_inner(
+         self, grammar_output: "GrammarOutput | None"
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput:
+         return self.model_runner.sample_tokens(grammar_output)
+ 
++    # [claude-stt-01] GLM5_STAGE_TIMING=1: time every stage call (see stage-timing-01-edit.py). Off: a plain pass-through.
++    def execute_model(self, scheduler_output: "SchedulerOutput"):
++        if not (_GLM5_STAGE_TIMING or _GLM5_MODULE_TIMING):
++            return self._glm5_execute_model_inner(scheduler_output)
++        mt = _GLM5_MODULE_TIMING and scheduler_output.total_num_scheduled_tokens > 64  # [claude-mt-01]
++        if mt:
++            self._glm5_mt_begin()
++        t0 = time.perf_counter()
++        out = self._glm5_execute_model_inner(scheduler_output)
++        torch.cuda.current_stream().synchronize()
++        if mt:
++            self._glm5_mt_end(scheduler_output, (time.perf_counter() - t0) * 1000)
++        if _GLM5_STAGE_TIMING:
++            self._glm5_stt("exec", t0, scheduler_output)
++        return out
++
++    def _glm5_mt_begin(self):  # [claude-mt-01]
++        if getattr(self, "_glm5_mt", None) is None:
++            import re
++            from vllm.distributed import get_tensor_model_parallel_rank
++            st = self._glm5_mt = {"on": False, "pairs": [], "open": {}, "agg": {}, "steps": 0, "tok": 0, "wall": 0.0,
++                                  "rank0": get_tensor_model_parallel_rank() == 0}
++            pat = re.compile(r"(?:^|\.)layers\.(\d+)(?:\.(.*))?$")
++            def pre(key):
++                def f(mod, args):
++                    if st["on"]:
++                        e = torch.cuda.Event(enable_timing=True); e.record(); st["open"].setdefault(key, []).append(e)
++                return f
++            def post(key):
++                def f(mod, args, output):
++                    if st["on"] and st["open"].get(key):
++                        e = torch.cuda.Event(enable_timing=True); e.record(); st["pairs"].append((key, st["open"][key].pop(), e))
++                return f
++            n = 0
++            for name, mod in self.model_runner.model.named_modules():
++                m = pat.search(name)
++                if not m or (m.group(2) or "").count(".") > 2:
++                    continue
++                key = f"{type(mod).__name__}:{m.group(2) or '(whole layer)'}"
++                mod.register_forward_pre_hook(pre(key)); mod.register_forward_hook(post(key)); n += 1
++            logger.info("[claude-mt-01] module timing hooks on %d modules", n)
++        st = self._glm5_mt
++        st["on"] = True; st["pairs"] = []; st["open"] = {}
++
++    def _glm5_mt_end(self, so, wall_ms):  # [claude-mt-01]
++        st = self._glm5_mt; st["on"] = False
++        for key, a, b in st["pairs"]:
++            v = st["agg"].setdefault(key, [0.0, 0]); v[0] += a.elapsed_time(b); v[1] += 1
++        st["pairs"] = []; st["steps"] += 1; st["tok"] += so.total_num_scheduled_tokens; st["wall"] += wall_ms
++        if st["rank0"] and st["steps"] % 5 == 0:
++            os.makedirs("/cache/module-timing", exist_ok=True)
++            rows = sorted(st["agg"].items(), key=lambda kv: -kv[1][0])
++            with open(f"/cache/module-timing/mt-pp{get_pp_group().rank_in_group}.txt", "w") as f:
++                f.write(f"{st['steps']} prompt steps, {st['tok']} tokens, stage wall time {st['wall']:.0f} ms "
++                        f"({st['wall'] / st['steps']:.1f} ms per step)\n")
++                f.write("| part | GPU ms total | calls | ms per call | % of stage wall time |\n| --- | --- | --- | --- | --- |\n")
++                for key, (ms, c) in rows:
++                    f.write(f"| {key} | {ms:.1f} | {c} | {ms / c:.3f} | {100 * ms / max(st['wall'], 1e-9):.1f} |\n")
++
++    def sample_tokens(self, grammar_output: "GrammarOutput | None"):
++        if not _GLM5_STAGE_TIMING:
++            return self._glm5_sample_tokens_inner(grammar_output)
++        t0 = time.perf_counter()
++        out = self._glm5_sample_tokens_inner(grammar_output)
++        torch.cuda.current_stream().synchronize()
++        self._glm5_stt("samp", t0, None)
++        return out
++
++    def _glm5_stt(self, kind, t0, so):
++        t1 = time.perf_counter()
++        f = getattr(self, "_glm5_stt_f", None)
++        if f is None:
++            from vllm.distributed import get_tensor_model_parallel_rank
++            if get_tensor_model_parallel_rank() != 0:
++                self._glm5_stt_f = False
++                return
++            os.makedirs("/cache/stage-timing", exist_ok=True)
++            f = self._glm5_stt_f = open(f"/cache/stage-timing/st-pp{get_pp_group().rank_in_group}.txt", "a", buffering=1)
++            self._glm5_stt_prev = t0
++        if f is False:
++            return
++        gap = (t0 - self._glm5_stt_prev) * 1000
++        self._glm5_stt_prev = t1
++        extra = ""
++        if so is not None:
++            d = so.num_scheduled_tokens
++            nd = sum(1 for v in d.values() if v <= 3)
++            extra = f" tok={so.total_num_scheduled_tokens} dec={nd} pre={len(d) - nd}"
++        f.write(f"{t1:.4f} {kind} ms={(t1 - t0) * 1000:.1f} gap={gap:.1f}{extra}\n")
++
++    def _glm5_ecount_poll(self):
++        # [claude-ecount-02] when GLM5_ECOUNT_DIR holds a file trigger-<tag> this worker has not handled, save this pipeline
++        # stage's expert counters (tensor-parallel rank 0 only: both ranks of a stage route identically) as <tag>-rank<R>.pt
++        from vllm.distributed import get_tensor_model_parallel_rank
++        if get_tensor_model_parallel_rank() != 0:
++            return
++        d = os.environ.get("GLM5_ECOUNT_DIR", "/cache/expert-count")
++        done = getattr(self, "_glm5_ec_done", None)
++        if done is None:
++            done = self._glm5_ec_done = set()
++        try:
++            tags = [f[8:] for f in os.listdir(d) if f.startswith("trigger-")]
++        except FileNotFoundError:
++            return
++        for tag in sorted(tags):
++            if tag in done:
++                continue
++            done.add(tag)
++            from vllm.v1.worker import glm5_ecount as _ec
++            torch.cuda.synchronize(self.device)
++            snap = _ec.snapshot(self.model_runner.model)
++            torch.save(snap, os.path.join(d, f"{tag}-rank{self.rank}.pt"))
++            logger.info("[GLM5_ECOUNT] saved %s: %d MoE layers on rank %d", tag, len(snap), self.rank)
++
++    @torch.inference_mode()
++    def _glm5_canary_check(self, where):
++        # [claude-canary-02] compare the four canary blocks with the last content seen; on a change
++        # log where, how many words changed, and the first changed bytes. Never writes to the blocks
++        # (a write would land in whatever else shares the memory), only updates what it expects next.
++        if not getattr(self, "_glm5_canary", None):
++            return
++        self._glm5_canary_checks += 1
++        for _i, _c in enumerate(self._glm5_canary):
++            _t, _want = _c
++            _got = _t.cpu().numpy()
++            _diff = (_got != _want)
++            _n = int(_diff.sum())
++            if _n:
++                _first = int(_diff.argmax())
++                _raw = _got[_first:_first + 16].tobytes()
++                logger.error("[GLM5_CANARY] HIT %s (check %d) on %s block %d at 0x%x: %d of 131072 words changed, first at word %d; bytes there: %s",
++                             where, self._glm5_canary_checks, self.device, _i, _t.data_ptr(), _n, _first, _raw.hex())
++                self._glm5_canary[_i] = (_t, _got.copy())
++        if self._glm5_canary_checks % 500 == 0:
++            logger.info("[GLM5_CANARY] %d checks on %s", self._glm5_canary_checks, self.device)
++
++    # [claude-memsnap-02] these two decorators belong to execute_model (as in the image and port-26); canary-01, canary-02,
++    # noempty-01 and memsnap-01 had put _glm5_canary_check between them and execute_model, so execute_model ran outside
++    # inference mode and PP stages failed on 'Inplace update to inference tensor outside InferenceMode'.
+     @torch.inference_mode()
+     @with_gpu_sync_check
+-    def execute_model(
++    def _glm5_execute_model_inner(
+         self, scheduler_output: "SchedulerOutput"
+     ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
++        self._glm5_canary_check("step-start")
++        if os.environ.get("GLM5_EXPERT_COUNT") == "1":
++            self._glm5_ecount_poll()
+         # ensure any previous non-blocking PP sends are complete
+         if self._pp_send_work:
+             for handle in self._pp_send_work:
+@@ -1387,3 +1612,21 @@
+     # Init ec connector here before KV caches init
+     # NOTE: We do not init KV caches for Encoder-only instance in EPD disagg mode
+     ensure_ec_transfer_initialized(vllm_config)
++
++
++def _glm5_canary_wrap(name):
++    # [claude-canary-02] check the canary before and after each start-up stage, to find the stage
++    # in which something else first writes over it.
++    _orig = getattr(Worker, name)
++
++    def _w(self, *args, **kwargs):
++        self._glm5_canary_check("before-" + name)
++        _r = _orig(self, *args, **kwargs)
++        self._glm5_canary_check("after-" + name)
++        return _r
++    setattr(Worker, name, _w)
++
++
++if os.environ.get("GLM5_CANARY") == "1":
++    for _name in ("load_model", "determine_available_memory", "initialize_from_config", "compile_or_warm_up_model"):
++        _glm5_canary_wrap(_name)

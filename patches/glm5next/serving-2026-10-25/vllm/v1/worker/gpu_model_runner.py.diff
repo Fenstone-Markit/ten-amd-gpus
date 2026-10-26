@@ -1,0 +1,336 @@
+--- a/overlay/v1/worker/gpu_model_runner.py
++++ b/v1/worker/gpu_model_runner.py
+@@ -4,6 +4,7 @@
+ import functools
+ import gc
+ import itertools
++import os
+ import threading
+ import time
+ from collections import defaultdict
+@@ -144,6 +145,11 @@
+     BailingLinearAttentionMetadataBuilder,
+ )
+ from vllm.v1.attention.backends.mamba2_attn import Mamba2AttentionMetadataBuilder
++from vllm.v1.attention.ops.glm5_meta_watch import (
++    meta_watch_a,
++    meta_watch_check_e2,
++    meta_watch_set_expected,
++)
+ from vllm.v1.attention.backends.utils import (
+     NULL_BLOCK_ID,
+     create_fast_prefill_custom_backend,
+@@ -1415,6 +1421,15 @@
+                 if not req_data.new_token_ids:
+                     # Async scheduled PP: Sampled tokens propagated via GPU broadcast.
+                     new_token_ids: list[int] = []
++                    # [claude-mtp-07b] async spec decode: output_token_ids was inflated by the optimistic
++                    # extend above; align it with the scheduler as the last stage does (its elif below).
++                    if num_output_tokens < len(req_state.output_token_ids):
++                        del req_state.output_token_ids[num_output_tokens:]
++                        if req_index is not None:
++                            self.input_batch.num_tokens_no_spec[req_index] = (
++                                self.input_batch.num_prompt_tokens[req_index]
++                                + num_output_tokens
++                            )
+                 else:
+                     # Non-async scheduling with PP: The scheduler sends
+                     # sampled token ids back because there's no direct communication
+@@ -2593,7 +2608,7 @@
+                 cm.block_table_tensor = _get_block_table(kv_cache_gid)
+                 cm.slot_mapping = slot_mappings[kv_cache_gid]
+ 
+-            if self.speculative_config and spec_decode_common_attn_metadata is None:
++            if self.speculative_config and hasattr(self, "drafter") and spec_decode_common_attn_metadata is None:  # [claude-mtp-02]
+                 if isinstance(
+                     self.drafter,
+                     (
+@@ -2608,13 +2623,13 @@
+                 else:
+                     spec_decode_common_attn_metadata = cm
+             # Capture per-group block tables for multi-group proposers.
+-            if self.speculative_config and isinstance(
++            if self.speculative_config and hasattr(self, "drafter") and isinstance(  # [claude-mtp-02]
+                 self.drafter, (Step3p5MTPProposer, Glm5NextMTPProposer)
+             ):
+                 self.drafter.set_per_group_attn_metadata(
+                     kv_cache_gid, cm.block_table_tensor, cm.slot_mapping
+                 )
+-            elif self.speculative_config and isinstance(self.drafter, Gemma4Proposer):
++            elif self.speculative_config and hasattr(self, "drafter") and isinstance(self.drafter, Gemma4Proposer):  # [claude-mtp-02]
+                 self.drafter.set_per_group_block_table(
+                     kv_cache_gid, cm.block_table_tensor
+                 )
+@@ -4217,6 +4232,81 @@
+         num_reqs = self.input_batch.num_reqs
+         return bool(self.discard_request_mask.np[:num_reqs].all())
+ 
++    def _glm5_pp_broadcast_spec(self, sampled_token_ids: torch.Tensor) -> None:
++        """[claude-mtp-07] Last pipeline stage, spec decode: send every earlier stage, per request,
++        [next input token, valid sampled count (position correction), accepted count (KDA/mamba state),
++        draft tokens]. Without it the earlier stages never learn how many drafts were accepted: in
++        async mode they cannot build the next step's inputs, and in either mode their KDA layers keep
++        the default of one accepted token."""
++        pp = get_pp_group()
++        if self._is_all_reqs_chunked_prefill():
++            return
++        n = self.input_batch.num_reqs
++        k = self.num_spec_tokens
++        out = sampled_token_ids[:n]
++        buf = torch.zeros((n, 3 + k), dtype=torch.int32, device=self.device)
++        acc = (out != -1).sum(dim=1).to(torch.int32)
++        buf[:, 2] = acc
++        prev = self.input_batch.prev_sampled_token_ids
++        vcnt = self.valid_sampled_token_count_gpu
++        if self.use_async_scheduling and prev is not None and vcnt is not None:
++            buf[:, 0] = prev[:n, 0].to(torch.int32)
++            buf[:, 1] = vcnt[:n].to(torch.int32)
++        else:
++            idx = (acc.long() - 1).clamp(min=0)
++            buf[:, 0] = out.gather(1, idx[:, None])[:, 0].to(torch.int32)
++            buf[:, 1] = acc
++        d = self._draft_token_ids
++        if k and isinstance(d, torch.Tensor) and d.dim() == 2 and d.shape[0] >= n:
++            kk = min(k, d.shape[1])
++            buf[:, 3 : 3 + kk] = d[:n, :kk].to(torch.int32)
++        torch.distributed.broadcast(buf, src=pp.rank, group=pp.device_group)
++
++    def _glm5_pp_receive_spec(self) -> None:
++        """[claude-mtp-07] Earlier pipeline stages, spec decode: receive what _glm5_pp_broadcast_spec
++        sent and apply it the way the last stage applied it to itself."""
++        pp = get_pp_group()
++        assert not pp.is_last_rank
++        n = self.input_batch.num_reqs
++        k = self.num_spec_tokens
++        buf = torch.zeros((n, 3 + k), dtype=torch.int32, device=self.device)
++        if not self._is_all_reqs_chunked_prefill():
++            torch.distributed.broadcast(buf, src=pp.last_rank, group=pp.device_group)
++        else:
++            buf[:, 2] = 1
++        sched = getattr(self, "_glm5_pp_sched", None)
++        self._glm5_pp_sched = None
++        if self.model_config.is_hybrid and sched is not None:
++            ar = torch.arange(k + 1, device=self.device, dtype=torch.int32)[None, :]
++            fake = torch.where(
++                ar < buf[:, 2:3],
++                torch.zeros((), dtype=torch.int32, device=self.device),
++                torch.full((), -1, dtype=torch.int32, device=self.device),
++            )
++            self._update_states_after_model_execute(fake, sched)
++        if not self.use_async_scheduling:
++            return
++        self._copy_valid_sampled_token_count(buf[:, 0].contiguous(), buf[:, 1].contiguous())
++        if self.input_batch.prev_sampled_token_ids is None:
++            self.input_batch.prev_sampled_token_ids = buf[:, 0:1].contiguous()
++        self._draft_token_ids = (
++            buf[:, 3:].to(self.input_ids.gpu.dtype).contiguous() if k else None
++        )
++        # Same bookkeeping as _pp_receive_prev_sampled_token_ids_to_input_batch.
++        discard_req_indices = np.nonzero(self.discard_request_mask.np[:n])[0]
++        discard_req_indices_set = set(discard_req_indices)
++        prev_req_id_to_index: dict[str, int] = {}
++        for i, req_id in enumerate(self.input_batch.req_ids):
++            if i in discard_req_indices_set:
++                continue
++            prev_req_id_to_index[req_id] = i
++            if (req_state := self.requests.get(req_id)) is not None:
++                req_state.output_token_ids.append(-1)
++            pos = self.input_batch.num_tokens_no_spec[i]
++            self.input_batch.is_token_ids[i, pos] = True
++            self.input_batch.num_tokens_no_spec[i] = pos + 1
++        self.input_batch.prev_req_id_to_index = prev_req_id_to_index
++
+     @torch.inference_mode()
+     def _glm5_profiler_tick(self) -> None:
+         """[glm5-perf] Env-gated torch profiler for the decode-step breakdown
+@@ -4607,6 +4697,7 @@
+                     # Return the intermediate tensors.
+                     assert isinstance(hidden_states, IntermediateTensors)
+                     self.kv_connector_output = kv_connector_output
++                    self._glm5_pp_sched = scheduler_output  # [claude-mtp-07]
+                     return hidden_states
+ 
+                 if self.is_pooling_model:
+@@ -4694,7 +4785,14 @@
+             kv_connector_output = self.kv_connector_output
+             self.kv_connector_output = None
+             # receive sampled token ids from the last PP rank.
+-            if self.use_async_scheduling and not get_pp_group().is_last_rank:
++            if (  # [claude-mtp-07] pipeline + spec decode: next token, counts, drafts
++                self.speculative_config is not None
++                and get_pp_group().world_size > 1
++                and not get_pp_group().is_last_rank
++                and not self.broadcast_pp_output
++            ):
++                self._glm5_pp_receive_spec()
++            elif self.use_async_scheduling and not get_pp_group().is_last_rank:
+                 self._pp_receive_prev_sampled_token_ids_to_input_batch()
+             # In case of PP with kv transfer, we need to pass through the
+             # kv_connector_output
+@@ -4733,7 +4831,12 @@
+             # For torchrun external_launcher PP mode with broadcast_pp_output=True,
+             # PP outputs have been broadcasted to all ranks at logits computation.
+             # Therefore, here is no need to send sampled token ids again in this case.
+-            if not self.broadcast_pp_output and pp.world_size > 1 and pp.is_last_rank:
++            if (
++                not self.broadcast_pp_output
++                and pp.world_size > 1
++                and pp.is_last_rank
++                and self.speculative_config is None  # [claude-mtp-07] spec: sent after drafting
++            ):
+                 self._pp_broadcast_prev_sampled_token_ids(
+                     sampler_output.sampled_token_ids
+                 )
+@@ -4850,6 +4953,14 @@
+                 self._draft_prob_req_ids = None
+                 self._copy_draft_token_ids_to_cpu(scheduler_output, zeros_only=True)
+ 
++        if (  # [claude-mtp-07]
++            spec_config is not None
++            and get_pp_group().world_size > 1
++            and get_pp_group().is_last_rank
++            and not self.broadcast_pp_output
++        ):
++            self._glm5_pp_broadcast_spec(sampler_output.sampled_token_ids)
++
+         with record_function_or_nullcontext("gpu_model_runner: bookkeep"):
+             (
+                 num_nans_in_logits,
+@@ -6178,6 +6289,25 @@
+                 )
+                 self.query_start_loc.copy_to_gpu()
+ 
++                # [glm5next-port-23] GLM5_META_WATCH (a): checkpoint just after
++                # seq_lens and query_start_loc are copied to the GPU — print the
++                # host values written and the device values read back. Off by
++                # default; no-op when off.
++                meta_watch_a(
++                    self.optimistic_seq_lens_cpu,
++                    self.seq_lens,
++                    self.query_start_loc.np,
++                    self.query_start_loc.gpu,
++                    num_reqs,
++                    num_tokens_unpadded,
++                )
++                # [glm5next-port-23] Part 2: record the host-staged expected values
++                # (the values (a) just confirmed SANE on device), then re-check the
++                # device buffers after EVERY step between (a) and the metadata build,
++                # so we can see which step first makes them wrong.
++                meta_watch_set_expected(self.optimistic_seq_lens_cpu, self.query_start_loc.np)
++                meta_watch_check_e2("(e0) after H2D copies", self.seq_lens, self.query_start_loc.gpu)
++
+                 prepare_dcp_dummy_context_metadata(
+                     input_batch=self.input_batch,
+                     kv_cache_config=getattr(self, "kv_cache_config", None),
+@@ -6188,12 +6318,15 @@
+                     num_tokens_unpadded=num_tokens_unpadded,
+                     dcp_dummy_context_len=dcp_dummy_context_len,
+                 )
++                meta_watch_check_e2("(e1) after prepare_dcp", self.seq_lens, self.query_start_loc.gpu)
+ 
+                 # Sync block table CPU->GPU so cleared rows from
+                 # remove_request() are visible to the attention metadata
+                 # builder. Without this, stale block IDs from finished
+                 # requests can corrupt Mamba state.
+                 self.input_batch.block_table.commit_block_table(num_reqs_padded)
++                meta_watch_check_e2("(e2) after commit_block_table", self.seq_lens, self.query_start_loc.gpu)
++                meta_watch_check_e2("(e3) before _build_attention_metadata", self.seq_lens, self.query_start_loc.gpu)
+ 
+                 pad_attn = cudagraph_runtime_mode == CUDAGraphMode.FULL
+                 attn_metadata, _ = self._build_attention_metadata(
+@@ -6295,7 +6428,7 @@
+             else:
+                 hidden_states = outputs
+ 
+-            if self.speculative_config and (
++            if self.speculative_config and hasattr(self, "drafter") and (  # [claude-mtp-02]
+                 self.speculative_config.use_eagle()
+                 or self.speculative_config.uses_draft_model()
+                 or self.speculative_config.uses_extract_hidden_states()
+@@ -6619,6 +6752,17 @@
+                             self.encoder_cache[f"tmp_{i}"] = output
+ 
+         # Add `is_profile` here to pre-allocate communication buffers
++        _mem_trace_on = os.environ.get("GLM5_MEM_TRACE", "0") == "1"
++        if _mem_trace_on:
++            torch.cuda.synchronize()
++            _mt_before = torch.cuda.memory_allocated()
++            print(f"[MEM_TRACE] profile_run base memory_allocated = "
++                  f"{_mt_before/1024**3:.3f} GiB (before dummy run)", flush=True)
++            # record the full alloc/free event timeline so we can name the
++            # transient (freed) window-scaled tensor the dummy run produces
++            torch.cuda.memory._record_memory_history(
++                True, record_context=True, trace_alloc_max_entries=200000,
++                trace_alloc_record_context=True, clear_history=True)
+         hidden_states, last_hidden_states = self._dummy_run(
+             self.max_num_tokens, is_profile=True
+         )
+@@ -6631,6 +6775,50 @@
+             output = None
+         self._sync_device()
+         del hidden_states, output
++        # [glm5-mem-trace] GLM5_MEM_TRACE=1: dump the alloc/free event timeline
++        # of the start-up measurement and name the transient (freed)
++        # window-scaled tensors. The transient is freed by this point, so the
++        # live snapshot misses it; the event timeline keeps it with its stack.
++        if _mem_trace_on:
++            try:
++                import pickle as _pickle
++                _tmp = f"/tmp/memtrace_{os.getpid()}.pkl"
++                torch.cuda.memory._dump_snapshot(_tmp)
++                torch.cuda.memory._record_memory_history(False)
++                _peak = torch.cuda.memory_stats().get(
++                    "allocated_bytes.all.peak", 0)
++                print(f"[MEM_TRACE] profile_run base={_mt_before/1024**3:.3f} GiB "
++                      f"peak={_peak/1024**3:.3f} GiB "
++                      f"transient_peak={( _peak - _mt_before)/1024**3:.3f} GiB "
++                      f"(dump -> {_tmp})", flush=True)
++                _d = _pickle.loads(open(_tmp, "rb").read())
++                _evs = _d["device_traces"][0]
++                # aggregate allocs by their deepest vllm/ops frame, keeping the
++                # peak live size (max over the timeline of cumulative alloc)
++                _agg = {}
++                for _e in _evs:
++                    if not isinstance(_e, dict):
++                        continue
++                    if _e.get("action") != "alloc":
++                        continue
++                    _loc = "?"
++                    for _f in (_e.get("frames") or []):
++                        if isinstance(_f, dict):
++                            _loc = f"{_f.get('filename','?')}:{_f.get('line','?')}"
++                            if "site-packages" not in str(_loc):
++                                break
++                    _sz = _e.get("size", 0)
++                    _agg[_loc] = _agg.get(_loc, 0) + _sz
++                _agg = sorted(_agg.items(), key=lambda kv: kv[1], reverse=True)
++                for _loc, _sz in _agg[:30]:
++                    print(f"[MEM_TRACE]   alloc_total {_sz/1024**3:8.4f} GiB  {_loc}",
++                          flush=True)
++            except Exception as _e:
++                print(f"[MEM_TRACE] trace failed: {_e!r}", flush=True)
++                try:
++                    torch.cuda.memory._record_memory_history(False)
++                except Exception:
++                    pass
+         self.encoder_cache.clear()
+         gc.collect()
+ 
+@@ -7280,7 +7468,7 @@
+         self.calculate_reorder_batch_threshold()
+ 
+         # Initialize drafter attention backend
+-        if self.speculative_config and (
++        if self.speculative_config and hasattr(self, "drafter") and (  # [claude-mtp-02]
+             self.speculative_config.use_eagle()
+             or self.speculative_config.uses_draft_model()
+         ):
+@@ -7334,7 +7522,7 @@
+         )
+ 
+         # Initialize drafter's cudagraph dispatcher if using spec decode.
+-        if self.speculative_config and (
++        if self.speculative_config and hasattr(self, "drafter") and (  # [claude-mtp-02]
+             self.speculative_config.use_eagle()
+             or self.speculative_config.uses_draft_model()
+             or self.speculative_config.uses_extract_hidden_states()

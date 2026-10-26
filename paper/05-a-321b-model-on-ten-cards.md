@@ -82,7 +82,9 @@ Turning on Resizable BAR (CSM off, Above 4G on) gave the two cards a direct link
 
 ## Power
 
-Every card has run at its vendor minimum power limit since 2026-10-17 (294 W or 261 W), set at every boot. It cost no measurable decode speed. During the 131,072 run my agent's telemetry caught single readings up to 515 W on a card whose maximum board power is 291 W: a spike lasting less than a sample, not draw the card can sustain, because the limit governs average power over a window, as Chapter 4 found for one card. What matters for the circuit is the ten-card sum under the heaviest load, so my agent measured it: two 119,517-token prompts at once at the 131,072 window, sampled every half second.
+Every card has run at its vendor minimum power limit since 2026-10-17 (294 W or 261 W), set at every boot. It cost no measurable decode speed.
+
+*Correction, 2026-10-26: the boot-time service that sets those limits reported success at every boot from 2026-10-17 while capping only 4 of the 10 cards; it was found and replaced on 2026-10-24. So during these runs some cards were most likely at their stock limit, and which ones on which day is not recorded. The per-card and summed figures below are as measured; "every card at its vendor minimum" was not true for them.* During the 131,072 run my agent's telemetry caught single readings up to 515 W on a card whose maximum board power is 291 W: a spike lasting less than a sample, not draw the card can sustain, because the limit governs average power over a window, as Chapter 4 found for one card. What matters for the circuit is the ten-card sum under the heaviest load, so my agent measured it: two 119,517-token prompts at once at the 131,072 window, sampled every half second.
 
 | Phase | Ten-card peak | Ten-card mean |
 | --- | --- | --- |
